@@ -26,6 +26,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Workflow source reminder (workflow_run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::notice::Deploy HML triggered as: ${{ github.event_name }}"
+          echo "::notice::For 'workflow_run', GitHub loads workflow definitions from the repository DEFAULT branch (often 'main'), not necessarily from 'develop'."
+          echo "::notice::If this log does not show a 'Diagnose SSH secrets' step, your default branch is still running an older workflow file — merge the latest workflows into the default branch."
+
       - name: Diagnose SSH secrets (no key material printed)
         shell: bash
         env:
@@ -125,12 +133,26 @@ jobs:
 
           echo "SSH diagnostics passed; proceeding to appleboy/ssh-action."
 
+      - name: Materialize SSH private key for ssh-action (key_path)
+        id: ssh_key_file
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key_path="${RUNNER_TEMP}/github_actions_deploy_key"
+          umask 077
+          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY}" | sed 's/\r$//')
+          printf '%s\n' "${key_norm}" > "${key_path}"
+          echo "key_path=${key_path}" >> "${GITHUB_OUTPUT}"
+          echo "Wrote deploy key to isolated temp file (contents not logged)."
+
       - name: Deploy to DigitalOcean Droplet via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key_path: ${{ steps.ssh_key_file.outputs.key_path }}
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 30m
           script_stop: true

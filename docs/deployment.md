@@ -106,6 +106,26 @@ The `scripts/deploy-hml.sh` script performs:
 
 ## Debugging Failures
 
+### `workflow_run` uses the default branch workflow file
+
+GitHub runs workflows triggered by `workflow_run` using the workflow definition from the repository **default branch** (usually `main`), not from the branch that triggered the upstream workflow.
+
+If you update `.github/workflows/deploy-hml.yml` only on `develop`, you may still execute an **older** `deploy-hml.yml` from `main` until you merge those workflow changes into the default branch.
+
+Symptoms:
+
+- Logs do not include newer steps such as `Diagnose SSH secrets` or `Materialize SSH private key for ssh-action`
+- SSH errors persist even after fixing secrets
+
+### `ssh.ParsePrivateKey: ssh: no key found`
+
+Common causes:
+
+- `SSH_PRIVATE_KEY` is empty in the environment that runs the job (wrong secret scope, wrong repository fork, or secret not available to Actions)
+- Private key was pasted into `SSH_USER` instead of `SSH_PRIVATE_KEY`
+- Key is **encrypted with a passphrase** (CI typically needs an unencrypted key, or configure `passphrase` in `appleboy/ssh-action`)
+- Multiline key formatting issues when passing `key:` inline (this repo writes a temp file and uses `key_path` to reduce that class of failures)
+
 If deployment fails:
 
 1. Check GitHub Actions logs for the failed step.
