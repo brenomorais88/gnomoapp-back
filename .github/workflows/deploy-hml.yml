@@ -26,6 +26,105 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Diagnose SSH secrets (no key material printed)
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          echo "::group::Which GitHub Secrets are used for SSH"
+          echo "This job reads: SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY"
+          echo "Private key bytes are never printed; only presence, shape checks, and a public fingerprint."
+          echo "::endgroup::"
+
+          echo "::group::Presence checks"
+          if [[ -z "${SSH_HOST// }" ]]; then
+            echo "::error::Secret SSH_HOST is empty or whitespace-only."
+            exit 1
+          fi
+          echo "OK: SSH_HOST is set (value not logged)."
+
+          if [[ -z "${SSH_PORT// }" ]]; then
+            echo "::error::Secret SSH_PORT is empty. Set it to your SSH port (usually 22)."
+            exit 1
+          fi
+          if ! [[ "${SSH_PORT}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Secret SSH_PORT must be numeric only (e.g. 22). Fix SSH_PORT."
+            exit 1
+          fi
+          echo "OK: SSH_PORT is set and numeric (value not logged)."
+
+          if [[ -z "${SSH_USER// }" ]]; then
+            echo "::error::Secret SSH_USER is empty. It must be the SSH login name only (e.g. root, ubuntu), not a private key."
+            exit 1
+          fi
+          echo "OK: SSH_USER is non-empty (username not logged)."
+
+          if [[ -z "${SSH_PRIVATE_KEY// }" ]]; then
+            echo "::error::Secret SSH_PRIVATE_KEY is empty. An empty key causes: ssh.ParsePrivateKey: ssh: no key found"
+            exit 1
+          fi
+          echo "OK: SSH_PRIVATE_KEY is non-empty."
+          echo "::endgroup::"
+
+          echo "::group::SSH_USER — detect private key pasted into wrong secret"
+          if [[ "${SSH_USER}" == *"BEGIN"* ]]; then
+            echo "::error::SSH_USER contains 'BEGIN' — a private key was likely pasted into **SSH_USER** by mistake."
+            echo "::error::Move the key block to repository secret **SSH_PRIVATE_KEY** and set **SSH_USER** to the account name only."
+            exit 1
+          fi
+          if [[ "${SSH_USER}" == *"PRIVATE KEY"* ]]; then
+            echo "::error::SSH_USER contains 'PRIVATE KEY' — fix secret mapping: username in SSH_USER, key in SSH_PRIVATE_KEY."
+            exit 1
+          fi
+          user_len="${#SSH_USER}"
+          echo "SSH_USER character length: ${user_len} (if this is hundreds+, you probably pasted a key into SSH_USER)"
+          if [[ "${user_len}" -gt 128 ]]; then
+            echo "::warning::SSH_USER is unusually long; confirm it is only the login name."
+          fi
+          echo "::endgroup::"
+
+          echo "::group::SSH_PRIVATE_KEY — format checks (still no key printed)"
+          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY}" | sed 's/\r$//')
+          if [[ "${key_norm}" != *"-----BEGIN "* ]]; then
+            echo "::error::**SSH_PRIVATE_KEY** must include a PEM/OpenSSH header line starting with -----BEGIN (e.g. -----BEGIN OPENSSH PRIVATE KEY-----)."
+            exit 1
+          fi
+          if [[ "${key_norm}" != *"-----END "* ]]; then
+            echo "::error::**SSH_PRIVATE_KEY** must include a footer line with -----END … ----- (truncated paste?)."
+            exit 1
+          fi
+          line_count=$(printf '%s\n' "${key_norm}" | wc -l | tr -d ' ')
+          echo "SSH_PRIVATE_KEY line count (after stripping CR): ${line_count}"
+          if [[ "${line_count}" -lt 3 ]]; then
+            echo "::error::**SSH_PRIVATE_KEY** has too few lines; paste the full key including BEGIN and END lines."
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::SSH_PRIVATE_KEY — parse test (same check ssh library does for unencrypted keys)"
+          tmp="$(mktemp)"
+          umask 077
+          printf '%s\n' "${key_norm}" > "${tmp}"
+          if ! ssh-keygen -y -f "${tmp}" -P '' > "${tmp}.pub" 2> "${tmp}.err"; then
+            echo "::error::**SSH_PRIVATE_KEY** failed ssh-keygen (cannot read as an unencrypted private key). Typical causes: wrong key, encrypted key with passphrase, or broken newlines when pasting into GitHub."
+            echo "ssh-keygen stderr (paths scrubbed):"
+            sed "s|${tmp}|[key-file]|g" "${tmp}.err" || cat "${tmp}.err"
+            rm -f "${tmp}" "${tmp}.pub" "${tmp}.err"
+            exit 1
+          fi
+          echo "OK: **SSH_PRIVATE_KEY** parses successfully."
+          echo "Public fingerprint for **SSH_PRIVATE_KEY** (compare with Droplet ~/.ssh/authorized_keys):"
+          ssh-keygen -lf "${tmp}.pub"
+          rm -f "${tmp}" "${tmp}.pub" "${tmp}.err"
+          echo "::endgroup::"
+
+          echo "SSH diagnostics passed; proceeding to appleboy/ssh-action."
+
       - name: Deploy to DigitalOcean Droplet via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:

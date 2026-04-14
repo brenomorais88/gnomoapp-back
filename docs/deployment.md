@@ -32,6 +32,7 @@ The deployment strategy is **pipeline image build + server-side image pull** wit
   - Successful `Build Docker Image` runs from `develop`
   - Manual run via `workflow_dispatch`
 - **Strategy**
+  - Run `Diagnose SSH secrets` step first (validates `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_PRIVATE_KEY` without printing secrets; detects a key pasted into `SSH_USER`; prints a **public key fingerprint** for `SSH_PRIVATE_KEY` so you can match it on the Droplet)
   - Connect to the DigitalOcean Droplet over SSH
   - Execute `scripts/deploy-hml.sh` on the server
   - Update local clone to `origin/develop`
