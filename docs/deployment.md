@@ -117,6 +117,18 @@ Symptoms:
 - Logs do not include newer steps such as `Diagnose SSH secrets` or `Materialize SSH private key for ssh-action`
 - SSH errors persist even after fixing secrets
 
+### `ssh: unable to authenticate, attempted methods [none publickey]`
+
+This happens **after** the private key is parsed locally. The SSH client offered public-key authentication, but the **Droplet did not accept** the key for the configured `SSH_USER`.
+
+Checklist on the Droplet (as `SSH_USER` or via console):
+
+1. The **public** key that matches `SSH_PRIVATE_KEY` must exist in `~/.ssh/authorized_keys` for that same user (not only for `root` if you connect as `ubuntu`, etc.).
+2. Permissions: `chmod 700 ~/.ssh` and `chmod 600 ~/.ssh/authorized_keys`.
+3. `sshd` allows public keys (`PubkeyAuthentication yes`).
+
+Compare fingerprints: the `Diagnose SSH secrets` step prints a fingerprint for `SSH_PRIVATE_KEY`. On the server, `ssh-keygen -lf ~/.ssh/authorized_keys` should list a matching line.
+
 ### `ssh.ParsePrivateKey: ssh: no key found`
 
 Common causes:

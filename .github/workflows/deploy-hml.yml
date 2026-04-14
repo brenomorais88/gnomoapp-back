@@ -132,6 +132,9 @@ jobs:
           echo "::endgroup::"
 
           echo "SSH diagnostics passed; proceeding to appleboy/ssh-action."
+          echo "::notice::If the next SSH step fails with: unable to authenticate, attempted methods [none publickey]"
+          echo "::notice::then the runner reached the server, but the Droplet rejected this key for the given SSH_USER."
+          echo "::notice::Fix on the server: add the matching PUBLIC key to that user's ~/.ssh/authorized_keys (same user as SSH_USER), chmod 700 ~/.ssh, chmod 600 ~/.ssh/authorized_keys."
 
       - name: Materialize SSH private key for ssh-action (key_path)
         id: ssh_key_file
@@ -146,6 +149,31 @@ jobs:
           printf '%s\n' "${key_norm}" > "${key_path}"
           echo "key_path=${key_path}" >> "${GITHUB_OUTPUT}"
           echo "Wrote deploy key to isolated temp file (contents not logged)."
+
+      - name: Verify HML and GHCR secrets exist (lengths only, values not printed)
+        shell: bash
+        env:
+          HML_DEPLOY_PATH: ${{ secrets.HML_DEPLOY_PATH }}
+          HML_HEALTHCHECK_URL: ${{ secrets.HML_HEALTHCHECK_URL }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          fail_empty() {
+            echo "::error::Repository secret '$1' is empty. Create it under Settings → Secrets and variables → Actions."
+            echo "::error::Note: GitHub masks secrets in logs; seeing export SOME_VAR=\"\" in ssh-action output can be redaction, but empty lengths here confirm the secret is really missing."
+            exit 1
+          }
+
+          [[ -n "${HML_DEPLOY_PATH}" ]] || fail_empty "HML_DEPLOY_PATH"
+          [[ -n "${HML_HEALTHCHECK_URL}" ]] || fail_empty "HML_HEALTHCHECK_URL"
+          [[ -n "${GHCR_USERNAME}" ]] || fail_empty "GHCR_USERNAME"
+          [[ -n "${GHCR_TOKEN}" ]] || fail_empty "GHCR_TOKEN"
+
+          echo "OK: HML_DEPLOY_PATH length=${#HML_DEPLOY_PATH} characters"
+          echo "OK: HML_HEALTHCHECK_URL length=${#HML_HEALTHCHECK_URL} characters"
+          echo "OK: GHCR_USERNAME length=${#GHCR_USERNAME} characters"
+          echo "OK: GHCR_TOKEN length=${#GHCR_TOKEN} characters"
 
       - name: Deploy to DigitalOcean Droplet via SSH
         uses: appleboy/ssh-action@v1.2.0
