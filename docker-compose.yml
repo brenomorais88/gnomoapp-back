@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: daily-back-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-daily}
+      POSTGRES_USER: ${DB_USER:-daily}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-daily}
+    ports:
+      - "${DB_EXTERNAL_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-daily} -d ${DB_NAME:-daily}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: daily-back-app
+    restart: unless-stopped
+    environment:
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_PORT: ${APP_PORT:-8080}
+      DB_HOST: postgres
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-daily}
+      DB_USER: ${DB_USER:-daily}
+      DB_PASSWORD: ${DB_PASSWORD:-daily}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      DB_SSL: ${DB_SSL:-false}
+      FLYWAY_ENABLED: ${FLYWAY_ENABLED:-true}
+      FLYWAY_LOCATION: ${FLYWAY_LOCATION:-classpath:db/migration}
+      SEED_ENABLED: ${SEED_ENABLED:-true}
+      RECURRENCE_MAINTENANCE_ENABLED: ${RECURRENCE_MAINTENANCE_ENABLED:-true}
+      RECURRENCE_MAINTENANCE_INTERVAL_HOURS: ${RECURRENCE_MAINTENANCE_INTERVAL_HOURS:-24}
+    ports:
+      - "${APP_EXTERNAL_PORT:-8081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

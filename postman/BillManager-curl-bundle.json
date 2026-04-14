@@ -1,0 +1,124 @@
+{
+  "name": "BillManager cURL Bundle",
+  "description": "All implemented API requests as cURL commands.",
+  "variables": {
+    "BASE_URL": "http://localhost:8080",
+    "CATEGORY_ID": "",
+    "ACCOUNT_ID": "",
+    "OCCURRENCE_ID": "",
+    "MONTH": "2026-04",
+    "DATE": "2026-04-14"
+  },
+  "requests": [
+    {
+      "module": "Health",
+      "name": "Get Health",
+      "curl": "curl -X GET \"${BASE_URL}/health\""
+    },
+    {
+      "module": "Categories",
+      "name": "List Categories",
+      "curl": "curl -X GET \"${BASE_URL}/categories\""
+    },
+    {
+      "module": "Categories",
+      "name": "Get Category By Id",
+      "curl": "curl -X GET \"${BASE_URL}/categories/${CATEGORY_ID}\""
+    },
+    {
+      "module": "Categories",
+      "name": "Create Category",
+      "curl": "curl -X POST \"${BASE_URL}/categories\" -H \"Content-Type: application/json\" -d '{\"name\":\"Leisure\",\"color\":\"#445566\"}'"
+    },
+    {
+      "module": "Categories",
+      "name": "Update Category",
+      "curl": "curl -X PUT \"${BASE_URL}/categories/${CATEGORY_ID}\" -H \"Content-Type: application/json\" -d '{\"name\":\"Leisure Updated\",\"color\":\"#223344\"}'"
+    },
+    {
+      "module": "Categories",
+      "name": "Delete Category",
+      "curl": "curl -X DELETE \"${BASE_URL}/categories/${CATEGORY_ID}\""
+    },
+    {
+      "module": "Accounts",
+      "name": "List Accounts",
+      "curl": "curl -X GET \"${BASE_URL}/accounts\""
+    },
+    {
+      "module": "Accounts",
+      "name": "Get Account By Id",
+      "curl": "curl -X GET \"${BASE_URL}/accounts/${ACCOUNT_ID}\""
+    },
+    {
+      "module": "Accounts",
+      "name": "Create Account",
+      "curl": "curl -X POST \"${BASE_URL}/accounts\" -H \"Content-Type: application/json\" -d '{\"title\":\"Internet\",\"baseAmount\":\"99.90\",\"startDate\":\"2026-04-14\",\"endDate\":null,\"recurrenceType\":\"MONTHLY\",\"categoryId\":\"${CATEGORY_ID}\",\"notes\":\"Home internet\",\"active\":true}'"
+    },
+    {
+      "module": "Accounts",
+      "name": "Update Account",
+      "curl": "curl -X PUT \"${BASE_URL}/accounts/${ACCOUNT_ID}\" -H \"Content-Type: application/json\" -d '{\"title\":\"Internet Updated\",\"baseAmount\":\"109.90\",\"startDate\":\"2026-04-14\",\"endDate\":null,\"recurrenceType\":\"MONTHLY\",\"categoryId\":\"${CATEGORY_ID}\",\"notes\":\"Home internet updated\",\"active\":true}'"
+    },
+    {
+      "module": "Accounts",
+      "name": "Delete Account",
+      "curl": "curl -X DELETE \"${BASE_URL}/accounts/${ACCOUNT_ID}\""
+    },
+    {
+      "module": "Accounts",
+      "name": "Activate Account",
+      "curl": "curl -X PATCH \"${BASE_URL}/accounts/${ACCOUNT_ID}/activate\""
+    },
+    {
+      "module": "Accounts",
+      "name": "Deactivate Account",
+      "curl": "curl -X PATCH \"${BASE_URL}/accounts/${ACCOUNT_ID}/deactivate\""
+    },
+    {
+      "module": "Occurrences",
+      "name": "List Occurrences (With Filters)",
+      "curl": "curl -X GET \"${BASE_URL}/occurrences?status=PENDING&categoryId=${CATEGORY_ID}&text=internet&startDate=2026-04-01&endDate=2026-04-30&month=${MONTH}\""
+    },
+    {
+      "module": "Occurrences",
+      "name": "Get Occurrence By Id",
+      "curl": "curl -X GET \"${BASE_URL}/occurrences/${OCCURRENCE_ID}\""
+    },
+    {
+      "module": "Occurrences",
+      "name": "Mark Occurrence Paid",
+      "curl": "curl -X PATCH \"${BASE_URL}/occurrences/${OCCURRENCE_ID}/mark-paid\""
+    },
+    {
+      "module": "Occurrences",
+      "name": "Unmark Occurrence Paid",
+      "curl": "curl -X PATCH \"${BASE_URL}/occurrences/${OCCURRENCE_ID}/unmark-paid\""
+    },
+    {
+      "module": "Occurrences",
+      "name": "Override Occurrence Amount",
+      "curl": "curl -X PATCH \"${BASE_URL}/occurrences/${OCCURRENCE_ID}/override-amount\" -H \"Content-Type: application/json\" -d '{\"amount\":\"123.45\"}'"
+    },
+    {
+      "module": "Dashboard",
+      "name": "Get Home Summary",
+      "curl": "curl -X GET \"${BASE_URL}/dashboard/home?month=${MONTH}\""
+    },
+    {
+      "module": "Dashboard",
+      "name": "Get Day Details",
+      "curl": "curl -X GET \"${BASE_URL}/dashboard/day?date=${DATE}\""
+    },
+    {
+      "module": "Dashboard",
+      "name": "Get Next 12 Months Projection",
+      "curl": "curl -X GET \"${BASE_URL}/dashboard/next-12-months?includeDetails=true\""
+    },
+    {
+      "module": "Dashboard",
+      "name": "Get Category Summary",
+      "curl": "curl -X GET \"${BASE_URL}/dashboard/category-summary?month=${MONTH}\""
+    }
+  ]
+}

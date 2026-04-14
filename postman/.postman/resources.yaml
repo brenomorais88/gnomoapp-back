@@ -1,0 +1,9 @@
+# Use this workspace to collaborate
+workspace:
+  id: 790b7d3d-102d-4e11-b2f0-cdfa3e6e1618
+
+localResources:
+  collections:
+    - ../BillManager-API.postman_collection.json
+  environments:
+    - ../BillManager-Local.postman_environment.json

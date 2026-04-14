@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: Daily Back API
+  version: 0.1.0
+  description: Backend API for the Daily bill management system.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service and database are healthy.
+        '503':
+          description: Service is running but database is unavailable.
