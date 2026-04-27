@@ -30,8 +30,9 @@ fi
 
 echo "==> Syncing repository"
 git fetch origin
-git checkout "${DEPLOY_BRANCH}"
+git checkout -f "${DEPLOY_BRANCH}" || git checkout -B "${DEPLOY_BRANCH}" "origin/${DEPLOY_BRANCH}"
 git reset --hard "origin/${DEPLOY_BRANCH}"
+git clean -fd
 
 if [[ -n "${GHCR_USERNAME}" && -n "${GHCR_TOKEN}" ]]; then
   echo "==> Logging in to GHCR"
