@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/dashboard/next-12-months?includeDetails=true"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  includeDetails: "true"
+order: 3000

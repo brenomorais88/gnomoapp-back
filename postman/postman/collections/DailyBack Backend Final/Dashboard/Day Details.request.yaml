@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/dashboard/day?date=2026-05-10"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  date: 2026-05-10
+order: 2000

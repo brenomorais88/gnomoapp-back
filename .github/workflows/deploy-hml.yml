@@ -1,10 +1,9 @@
 name: Deploy HML
 
 on:
-  workflow_run:
-    workflows: ["Build Docker Image"]
-    types:
-      - completed
+  push:
+    branches:
+      - develop
   workflow_dispatch:
 
 concurrency:
@@ -12,13 +11,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.metadata.outputs.short_sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.metadata.outputs.image_name }}:develop
+            ${{ steps.metadata.outputs.image_name }}:sha-${{ steps.metadata.outputs.short_sha }}
+
   deploy:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'develop'
-      )
+    needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -26,35 +65,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Workflow source reminder (workflow_run)
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::notice::Deploy HML triggered as: ${{ github.event_name }}"
-          echo "::notice::For 'workflow_run', GitHub loads workflow definitions from the repository DEFAULT branch (often 'main'), not necessarily from 'develop'."
-          echo "::notice::If this log does not show a 'Diagnose SSH secrets' step, your default branch is still running an older workflow file — merge the latest workflows into the default branch."
-
       - name: Diagnose SSH secrets (no key material printed)
         shell: bash
         env:
+          HML_HOST: ${{ secrets.HML_HOST }}
+          HML_USER: ${{ secrets.HML_USER }}
+          HML_SSH_KEY: ${{ secrets.HML_SSH_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
+          SSH_HOST_EFFECTIVE="${HML_HOST:-${SSH_HOST:-}}"
+          SSH_USER_EFFECTIVE="${HML_USER:-${SSH_USER:-}}"
+          SSH_PRIVATE_KEY_EFFECTIVE="${HML_SSH_KEY:-${SSH_PRIVATE_KEY:-}}"
 
           echo "::group::Which GitHub Secrets are used for SSH"
-          echo "This job reads: SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY"
+          echo "This job reads (legacy first): HML_HOST/HML_USER/HML_SSH_KEY, fallback SSH_HOST/SSH_USER/SSH_PRIVATE_KEY, plus SSH_PORT."
           echo "Private key bytes are never printed; only presence, shape checks, and a public fingerprint."
           echo "::endgroup::"
 
           echo "::group::Presence checks"
-          if [[ -z "${SSH_HOST// }" ]]; then
-            echo "::error::Secret SSH_HOST is empty or whitespace-only."
+          if [[ -z "${SSH_HOST_EFFECTIVE// }" ]]; then
+            echo "::error::Both host secrets are empty: HML_HOST and SSH_HOST."
             exit 1
           fi
-          echo "OK: SSH_HOST is set (value not logged)."
+          echo "OK: SSH host is set (value not logged)."
 
           if [[ -z "${SSH_PORT// }" ]]; then
             echo "::error::Secret SSH_PORT is empty. Set it to your SSH port (usually 22)."
@@ -66,30 +103,30 @@ jobs:
           fi
           echo "OK: SSH_PORT is set and numeric (value not logged)."
 
-          if [[ -z "${SSH_USER// }" ]]; then
-            echo "::error::Secret SSH_USER is empty. It must be the SSH login name only (e.g. root, ubuntu), not a private key."
+          if [[ -z "${SSH_USER_EFFECTIVE// }" ]]; then
+            echo "::error::Both user secrets are empty: HML_USER and SSH_USER. It must be the SSH login name only (e.g. root, ubuntu), not a private key."
             exit 1
           fi
-          echo "OK: SSH_USER is non-empty (username not logged)."
+          echo "OK: SSH user is non-empty (username not logged)."
 
-          if [[ -z "${SSH_PRIVATE_KEY// }" ]]; then
-            echo "::error::Secret SSH_PRIVATE_KEY is empty. An empty key causes: ssh.ParsePrivateKey: ssh: no key found"
+          if [[ -z "${SSH_PRIVATE_KEY_EFFECTIVE// }" ]]; then
+            echo "::error::Both key secrets are empty: HML_SSH_KEY and SSH_PRIVATE_KEY. An empty key causes: ssh.ParsePrivateKey: ssh: no key found"
             exit 1
           fi
-          echo "OK: SSH_PRIVATE_KEY is non-empty."
+          echo "OK: SSH private key is non-empty."
           echo "::endgroup::"
 
           echo "::group::SSH_USER — detect private key pasted into wrong secret"
-          if [[ "${SSH_USER}" == *"BEGIN"* ]]; then
+          if [[ "${SSH_USER_EFFECTIVE}" == *"BEGIN"* ]]; then
             echo "::error::SSH_USER contains 'BEGIN' — a private key was likely pasted into **SSH_USER** by mistake."
             echo "::error::Move the key block to repository secret **SSH_PRIVATE_KEY** and set **SSH_USER** to the account name only."
             exit 1
           fi
-          if [[ "${SSH_USER}" == *"PRIVATE KEY"* ]]; then
+          if [[ "${SSH_USER_EFFECTIVE}" == *"PRIVATE KEY"* ]]; then
             echo "::error::SSH_USER contains 'PRIVATE KEY' — fix secret mapping: username in SSH_USER, key in SSH_PRIVATE_KEY."
             exit 1
           fi
-          user_len="${#SSH_USER}"
+          user_len="${#SSH_USER_EFFECTIVE}"
           echo "SSH_USER character length: ${user_len} (if this is hundreds+, you probably pasted a key into SSH_USER)"
           if [[ "${user_len}" -gt 128 ]]; then
             echo "::warning::SSH_USER is unusually long; confirm it is only the login name."
@@ -97,7 +134,7 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::SSH_PRIVATE_KEY — format checks (still no key printed)"
-          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY}" | sed 's/\r$//')
+          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY_EFFECTIVE}" | sed 's/\r$//')
           if [[ "${key_norm}" != *"-----BEGIN "* ]]; then
             echo "::error::**SSH_PRIVATE_KEY** must include a PEM/OpenSSH header line starting with -----BEGIN (e.g. -----BEGIN OPENSSH PRIVATE KEY-----)."
             exit 1
@@ -140,12 +177,18 @@ jobs:
         id: ssh_key_file
         shell: bash
         env:
+          HML_SSH_KEY: ${{ secrets.HML_SSH_KEY }}
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           key_path="${RUNNER_TEMP}/github_actions_deploy_key"
           umask 077
-          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY}" | sed 's/\r$//')
+          SSH_PRIVATE_KEY_EFFECTIVE="${HML_SSH_KEY:-${SSH_PRIVATE_KEY:-}}"
+          if [[ -z "${SSH_PRIVATE_KEY_EFFECTIVE// }" ]]; then
+            echo "::error::Both key secrets are empty: HML_SSH_KEY and SSH_PRIVATE_KEY."
+            exit 1
+          fi
+          key_norm=$(printf '%s' "${SSH_PRIVATE_KEY_EFFECTIVE}" | sed 's/\r$//')
           printf '%s\n' "${key_norm}" > "${key_path}"
           echo "key_path=${key_path}" >> "${GITHUB_OUTPUT}"
           echo "Wrote deploy key to isolated temp file (contents not logged)."
@@ -153,33 +196,37 @@ jobs:
       - name: Verify HML and GHCR secrets exist (lengths only, values not printed)
         shell: bash
         env:
-          HML_DEPLOY_PATH: ${{ secrets.HML_DEPLOY_PATH }}
-          HML_HEALTHCHECK_URL: ${{ secrets.HML_HEALTHCHECK_URL }}
+          HML_HOST: ${{ secrets.HML_HOST }}
+          HML_USER: ${{ secrets.HML_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
           set -euo pipefail
+          HML_HOST_EFFECTIVE="${HML_HOST:-${SSH_HOST:-}}"
+          HML_USER_EFFECTIVE="${HML_USER:-${SSH_USER:-}}"
           fail_empty() {
             echo "::error::Repository secret '$1' is empty. Create it under Settings → Secrets and variables → Actions."
             echo "::error::Note: GitHub masks secrets in logs; seeing export SOME_VAR=\"\" in ssh-action output can be redaction, but empty lengths here confirm the secret is really missing."
             exit 1
           }
 
-          [[ -n "${HML_DEPLOY_PATH}" ]] || fail_empty "HML_DEPLOY_PATH"
-          [[ -n "${HML_HEALTHCHECK_URL}" ]] || fail_empty "HML_HEALTHCHECK_URL"
+          [[ -n "${HML_HOST_EFFECTIVE}" ]] || fail_empty "HML_HOST (or SSH_HOST fallback)"
+          [[ -n "${HML_USER_EFFECTIVE}" ]] || fail_empty "HML_USER (or SSH_USER fallback)"
           [[ -n "${GHCR_USERNAME}" ]] || fail_empty "GHCR_USERNAME"
           [[ -n "${GHCR_TOKEN}" ]] || fail_empty "GHCR_TOKEN"
 
-          echo "OK: HML_DEPLOY_PATH length=${#HML_DEPLOY_PATH} characters"
-          echo "OK: HML_HEALTHCHECK_URL length=${#HML_HEALTHCHECK_URL} characters"
+          echo "OK: SSH host length=${#HML_HOST_EFFECTIVE} characters"
+          echo "OK: SSH user length=${#HML_USER_EFFECTIVE} characters"
           echo "OK: GHCR_USERNAME length=${#GHCR_USERNAME} characters"
           echo "OK: GHCR_TOKEN length=${#GHCR_TOKEN} characters"
 
       - name: Deploy to DigitalOcean Droplet via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: ${{ secrets.HML_HOST != '' && secrets.HML_HOST || secrets.SSH_HOST }}
+          username: ${{ secrets.HML_USER != '' && secrets.HML_USER || secrets.SSH_USER }}
           key_path: ${{ steps.ssh_key_file.outputs.key_path }}
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 30m
@@ -188,19 +235,14 @@ jobs:
           script: |
             set -euo pipefail
 
-            export DEPLOY_PATH="${{ secrets.HML_DEPLOY_PATH }}"
+            export DEPLOY_PATH="/srv/daily-back"
             export DEPLOY_BRANCH="develop"
-            export APP_HEALTHCHECK_URL="${{ secrets.HML_HEALTHCHECK_URL }}"
+            export APP_HEALTHCHECK_URL="http://127.0.0.1:8081/health"
             export APP_SERVICE_NAME="app"
             export APP_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
             export GHCR_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
             export GHCR_USERNAME="${{ secrets.GHCR_USERNAME }}"
             export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            if [ "${{ github.event_name }}" = "workflow_run" ]; then
-              export DOCKER_IMAGE_TAG="sha-${{ github.event.workflow_run.head_sha }}"
-              export DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:0:11}"
-            else
-              export DOCKER_IMAGE_TAG="develop"
-            fi
+            export DOCKER_IMAGE_TAG="sha-${{ needs.build-and-push.outputs.image_tag }}"
 
             bash "${DEPLOY_PATH}/scripts/deploy-hml.sh"

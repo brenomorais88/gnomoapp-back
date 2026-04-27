@@ -7,3 +7,9 @@ localResources:
     - ../BillManager-API.postman_collection.json
   environments:
     - ../BillManager-Local.postman_environment.json
+
+# Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
+
+cloudResources:
+  collections:
+    ../postman/collections/DailyBack Backend Final: 4330034e-2200-4650-9104-fb7b380bb871

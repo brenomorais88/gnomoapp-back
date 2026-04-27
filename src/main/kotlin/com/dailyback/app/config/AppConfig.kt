@@ -6,6 +6,7 @@ data class AppConfig(
     val flyway: FlywayConfig,
     val seed: SeedConfig,
     val scheduler: SchedulerConfig,
+    val security: SecurityConfig,
 ) {
     companion object {
         fun fromEnvironment(): AppConfig = fromMap(System.getenv())
@@ -29,6 +30,12 @@ data class AppConfig(
             val scenarioSeedEnabled = environment["SEED_SCENARIO_ENABLED"]?.toBooleanStrictOrNull() ?: false
             val maintenanceEnabled = environment["RECURRENCE_MAINTENANCE_ENABLED"]?.toBooleanStrictOrNull() ?: true
             val maintenanceIntervalHours = environment["RECURRENCE_MAINTENANCE_INTERVAL_HOURS"]?.toLongOrNull() ?: 24L
+
+            val jwtSecret = environment["JWT_SECRET"]
+                ?: "local-dev-only-change-in-production-min-32-chars!!"
+            val jwtIssuer = environment["JWT_ISSUER"] ?: "daily-back"
+            val jwtAudience = environment["JWT_AUDIENCE"] ?: "daily-clients"
+            val jwtAccessTtlSeconds = environment["JWT_ACCESS_TOKEN_TTL_SECONDS"]?.toLongOrNull() ?: 86_400L
 
             return AppConfig(
                 server = ServerConfig(host = serverHost, port = serverPort),
@@ -54,10 +61,29 @@ data class AppConfig(
                     recurrenceMaintenanceEnabled = maintenanceEnabled,
                     recurrenceMaintenanceIntervalHours = maintenanceIntervalHours,
                 ),
+                security = SecurityConfig(
+                    jwt = JwtAuthConfig(
+                        secret = jwtSecret,
+                        issuer = jwtIssuer,
+                        audience = jwtAudience,
+                        accessTokenTtlSeconds = jwtAccessTtlSeconds,
+                    ),
+                ),
             )
         }
     }
 }
+
+data class SecurityConfig(
+    val jwt: JwtAuthConfig,
+)
+
+data class JwtAuthConfig(
+    val secret: String,
+    val issuer: String,
+    val audience: String,
+    val accessTokenTtlSeconds: Long,
+)
 
 data class ServerConfig(
     val host: String,

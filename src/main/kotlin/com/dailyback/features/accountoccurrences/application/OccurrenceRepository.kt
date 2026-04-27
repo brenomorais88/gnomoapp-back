@@ -13,6 +13,11 @@ data class OccurrenceFilters(
     val startDate: LocalDate? = null,
     val endDate: LocalDate? = null,
     val month: String? = null,
+    /**
+     * Account scope for listing. The persistence layer returns no rows when null or empty so
+     * occurrences are never listed without an explicit visibility scope (ownership / permissions).
+     */
+    val accountIds: Set<UUID>? = null,
 )
 
 interface OccurrenceRepository {

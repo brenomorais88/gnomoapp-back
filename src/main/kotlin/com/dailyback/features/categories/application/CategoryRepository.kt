@@ -4,12 +4,26 @@ import com.dailyback.features.categories.domain.Category
 import java.util.UUID
 
 interface CategoryRepository {
-    fun findAll(): List<Category>
-    fun findById(id: UUID): Category?
-    fun existsByName(name: String): Boolean
-    fun existsByNameExcludingId(name: String, excludedId: UUID): Boolean
-    fun create(name: String, color: String?): Category
-    fun update(id: UUID, name: String, color: String?): Category
-    fun deleteById(id: UUID)
+    fun listForUser(userId: UUID, familyId: UUID?): List<Category>
+
+    fun findByIdForUser(userId: UUID, familyId: UUID?, id: UUID): Category?
+
+    fun existsByNameForUser(userId: UUID, familyId: UUID?, name: String): Boolean
+
+    fun existsByNameExcludingIdForUser(
+        userId: UUID,
+        familyId: UUID?,
+        name: String,
+        excludedId: UUID,
+    ): Boolean
+
+    fun isVisibleToUser(categoryId: UUID, userId: UUID, familyId: UUID?): Boolean
+
+    fun createForUser(userId: UUID, familyId: UUID?, name: String, color: String?): Category
+
+    fun updateForUser(userId: UUID, familyId: UUID?, id: UUID, name: String, color: String?): Category
+
+    fun deleteByIdForUser(userId: UUID, familyId: UUID?, id: UUID)
+
     fun isCategoryInUse(id: UUID): Boolean
 }

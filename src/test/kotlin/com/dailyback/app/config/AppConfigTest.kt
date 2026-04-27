@@ -26,6 +26,9 @@ class AppConfigTest {
         assertFalse(config.seed.scenarioEnabled)
         assertTrue(config.scheduler.recurrenceMaintenanceEnabled)
         assertEquals(24L, config.scheduler.recurrenceMaintenanceIntervalHours)
+        assertEquals("daily-back", config.security.jwt.issuer)
+        assertEquals("daily-clients", config.security.jwt.audience)
+        assertEquals(86_400L, config.security.jwt.accessTokenTtlSeconds)
     }
 
     @Test

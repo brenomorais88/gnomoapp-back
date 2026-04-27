@@ -2,24 +2,28 @@ package com.dailyback.features.accounts.infrastructure
 
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
 import com.dailyback.features.accounts.application.AccountRepository
+import com.dailyback.features.accounts.application.AccountViewerQuery
 import com.dailyback.features.accounts.application.OccurrenceSnapshot
 import com.dailyback.features.accounts.application.SaveAccountCommand
 import com.dailyback.features.accounts.domain.Account
 import com.dailyback.features.accounts.domain.AccountOccurrence
+import com.dailyback.features.accounts.domain.AccountOwnershipType
 import com.dailyback.features.accounts.domain.RecurrenceType
+import com.dailyback.shared.domain.family.FamilyMembershipStatus
 import com.dailyback.shared.infrastructure.database.DatabaseFactory
 import com.dailyback.shared.infrastructure.database.tables.AccountOccurrencesTable
 import com.dailyback.shared.infrastructure.database.tables.AccountsTable
-import com.dailyback.shared.infrastructure.database.tables.CategoriesTable
+import com.dailyback.shared.infrastructure.database.tables.FamilyMembersTable
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.less
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
-import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.or
+import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -30,14 +34,64 @@ import java.util.UUID
 class ExposedAccountRepository(
     private val databaseFactory: DatabaseFactory,
 ) : AccountRepository {
-    override fun findAll(): List<Account> {
+    override fun findVisibleForUser(query: AccountViewerQuery): List<Account> {
         databaseFactory.connect()
         return transaction {
-            AccountsTable.selectAll()
-                .orderBy(AccountsTable.createdAt)
+            val personalOwn = AccountsTable.selectAll()
+                .where {
+                    (AccountsTable.ownershipType eq AccountOwnershipType.PERSONAL.name) and
+                        (AccountsTable.ownerUserId eq query.userId)
+                }
                 .map(::toAccount)
+
+            val familyRows =
+                if (query.canViewFamilyAccounts && query.viewerFamilyId != null) {
+                    AccountsTable.selectAll()
+                        .where {
+                            (AccountsTable.ownershipType eq AccountOwnershipType.FAMILY.name) and
+                                (AccountsTable.familyId eq query.viewerFamilyId)
+                        }
+                        .map(::toAccount)
+                } else {
+                    emptyList()
+                }
+
+            val othersPersonal =
+                if (query.canViewOtherPersonalAccounts && query.viewerFamilyId != null) {
+                    val userIdsInFamily = FamilyMembersTable.selectAll()
+                        .where {
+                            (FamilyMembersTable.familyId eq query.viewerFamilyId) and
+                                (FamilyMembersTable.userId.isNotNull()) and
+                                (
+                                    FamilyMembersTable.status inList listOf(
+                                        FamilyMembershipStatus.ACTIVE.name,
+                                        FamilyMembershipStatus.PENDING_REGISTRATION.name,
+                                    )
+                                    ) and
+                                (FamilyMembersTable.userId neq query.userId)
+                        }
+                        .mapNotNull { it[FamilyMembersTable.userId]?.value }
+                        .distinct()
+                    if (userIdsInFamily.isEmpty()) {
+                        emptyList()
+                    } else {
+                        AccountsTable.selectAll()
+                            .where {
+                                (AccountsTable.ownershipType eq AccountOwnershipType.PERSONAL.name) and
+                                    (AccountsTable.ownerUserId inList userIdsInFamily)
+                            }
+                            .map(::toAccount)
+                    }
+                } else {
+                    emptyList()
+                }
+
+            (personalOwn + familyRows + othersPersonal).distinctBy { it.id }.sortedBy { it.createdAt }
         }
     }
+
+    override fun findVisibleAccountIds(query: AccountViewerQuery): Set<UUID> =
+        findVisibleForUser(query).map { it.id }.toSet()
 
     override fun findActiveRecurringAccounts(): List<Account> {
         databaseFactory.connect()
@@ -45,7 +99,7 @@ class ExposedAccountRepository(
             AccountsTable.selectAll()
                 .where {
                     (AccountsTable.active eq true) and
-                        (AccountsTable.recurrenceType neq com.dailyback.features.accounts.domain.RecurrenceType.UNIQUE.name)
+                        (AccountsTable.recurrenceType neq RecurrenceType.UNIQUE.name)
                 }
                 .orderBy(AccountsTable.createdAt)
                 .map(::toAccount)
@@ -63,16 +117,6 @@ class ExposedAccountRepository(
         }
     }
 
-    override fun categoryExists(categoryId: UUID): Boolean {
-        databaseFactory.connect()
-        return transaction {
-            CategoriesTable.selectAll()
-                .where { CategoriesTable.id eq categoryId }
-                .limit(1)
-                .count() > 0L
-        }
-    }
-
     override fun create(command: SaveAccountCommand): Account {
         databaseFactory.connect()
         return transaction {
@@ -85,6 +129,11 @@ class ExposedAccountRepository(
                 it[categoryId] = command.categoryId
                 it[notes] = command.notes
                 it[active] = command.active
+                it[ownershipType] = command.ownershipType.name
+                it[ownerUserId] = command.ownerUserId
+                it[familyId] = command.familyId
+                it[createdByUserId] = command.createdByUserId
+                it[responsibleMemberId] = command.responsibleMemberId
             }[AccountsTable.id].value
 
             AccountsTable.selectAll()
@@ -231,6 +280,11 @@ class ExposedAccountRepository(
         categoryId = row[AccountsTable.categoryId].value,
         notes = row[AccountsTable.notes],
         active = row[AccountsTable.active],
+        ownershipType = AccountOwnershipType.fromValue(row[AccountsTable.ownershipType]),
+        ownerUserId = row[AccountsTable.ownerUserId]?.value,
+        familyId = row[AccountsTable.familyId]?.value,
+        createdByUserId = row[AccountsTable.createdByUserId]?.value,
+        responsibleMemberId = row[AccountsTable.responsibleMemberId]?.value,
         createdAt = row[AccountsTable.createdAt],
         updatedAt = row[AccountsTable.updatedAt],
     )

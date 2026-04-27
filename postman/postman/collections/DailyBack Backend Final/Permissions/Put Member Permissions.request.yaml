@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{baseUrl}}/families/current/members/{{familyMemberId}}/permissions"
+method: PUT
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "canViewFamilyAccounts": true,
+      "canCreateFamilyAccounts": false,
+      "canEditFamilyAccounts": false,
+      "canDeleteFamilyAccounts": false,
+      "canMarkFamilyAccountsPaid": false,
+      "canManageCategories": false,
+      "canInviteMembers": false,
+      "canManageMembers": false,
+      "canViewOtherPersonalAccounts": false,
+      "canEditOtherPersonalAccounts": false
+    }
+order: 2000

@@ -1,5 +1,6 @@
 package com.dailyback.features.accountoccurrences.api
 
+import com.dailyback.features.accounts.domain.AccountAccessDeniedException
 import com.dailyback.features.accountoccurrences.application.GetOccurrenceByIdUseCase
 import com.dailyback.features.accountoccurrences.application.ListOccurrencesUseCase
 import com.dailyback.features.accountoccurrences.application.MarkOccurrencePaidUseCase
@@ -9,7 +10,12 @@ import com.dailyback.features.accountoccurrences.application.UnmarkOccurrencePai
 import com.dailyback.features.accountoccurrences.domain.InvalidOccurrenceAmountException
 import com.dailyback.features.accountoccurrences.domain.OccurrenceNotFoundException
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
+import com.dailyback.features.families.application.FamilyPermissionAuthorizer
+import com.dailyback.shared.api.requireFamilyPermissionForScope
+import com.dailyback.shared.api.readAccountQueryScopeOrDefault
+import com.dailyback.shared.api.requireJwtUserId
 import com.dailyback.shared.api.toUuidOrBadRequest
+import com.dailyback.shared.domain.family.FamilyPermissionKey
 import com.dailyback.shared.errors.ApiException
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.request.receive
@@ -22,6 +28,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 fun Route.occurrenceRoutes(
+    familyPermissionAuthorizer: FamilyPermissionAuthorizer,
     listOccurrencesUseCase: ListOccurrencesUseCase,
     getOccurrenceByIdUseCase: GetOccurrenceByIdUseCase,
     markOccurrencePaidUseCase: MarkOccurrencePaidUseCase,
@@ -30,6 +37,16 @@ fun Route.occurrenceRoutes(
 ) {
     route("/occurrences") {
         get {
+            val userId = call.requireJwtUserId()
+            val scope = call.readAccountQueryScopeOrDefault(
+                invalidErrorCode = "INVALID_OCCURRENCE_REQUEST",
+            )
+            call.requireFamilyPermissionForScope(
+                userId = userId,
+                scope = scope,
+                authorizer = familyPermissionAuthorizer,
+                permission = FamilyPermissionKey.CAN_VIEW_FAMILY_ACCOUNTS,
+            )
             val filters = OccurrenceFilters(
                 status = call.request.queryParameters["status"]?.let(OccurrenceStatus::fromValue),
                 categoryId = call.request.queryParameters["categoryId"]?.let(UUID::fromString),
@@ -38,37 +55,41 @@ fun Route.occurrenceRoutes(
                 endDate = call.request.queryParameters["endDate"]?.let(LocalDate::parse),
                 month = call.request.queryParameters["month"],
             )
-            val list = runCatching { listOccurrencesUseCase.execute(filters) }
+            val list = runCatching { listOccurrencesUseCase.execute(userId, filters, scope) }
                 .getOrElse { throw mapOccurrenceException(it) }
             call.respond(list.map { it.toResponse() })
         }
 
         get("/{id}") {
+            val userId = call.requireJwtUserId()
             val id = call.parameters["id"].toUuidOrBadRequest("id")
-            val occurrence = runCatching { getOccurrenceByIdUseCase.execute(id) }
+            val occurrence = runCatching { getOccurrenceByIdUseCase.execute(userId, id) }
                 .getOrElse { throw mapOccurrenceException(it) }
             call.respond(occurrence.toResponse())
         }
 
         patch("/{id}/mark-paid") {
+            val userId = call.requireJwtUserId()
             val id = call.parameters["id"].toUuidOrBadRequest("id")
-            val occurrence = runCatching { markOccurrencePaidUseCase.execute(id) }
+            val occurrence = runCatching { markOccurrencePaidUseCase.execute(userId, id) }
                 .getOrElse { throw mapOccurrenceException(it) }
             call.respond(occurrence.toResponse())
         }
 
         patch("/{id}/unmark-paid") {
+            val userId = call.requireJwtUserId()
             val id = call.parameters["id"].toUuidOrBadRequest("id")
-            val occurrence = runCatching { unmarkOccurrencePaidUseCase.execute(id) }
+            val occurrence = runCatching { unmarkOccurrencePaidUseCase.execute(userId, id) }
                 .getOrElse { throw mapOccurrenceException(it) }
             call.respond(occurrence.toResponse())
         }
 
         patch("/{id}/override-amount") {
+            val userId = call.requireJwtUserId()
             val id = call.parameters["id"].toUuidOrBadRequest("id")
             val body = call.receive<OverrideOccurrenceAmountRequest>()
             val occurrence = runCatching {
-                overrideOccurrenceAmountUseCase.execute(id, body.amountAsBigDecimal())
+                overrideOccurrenceAmountUseCase.execute(userId, id, body.amountAsBigDecimal())
             }.getOrElse { throw mapOccurrenceException(it) }
             call.respond(occurrence.toResponse())
         }
@@ -80,6 +101,12 @@ private fun mapOccurrenceException(cause: Throwable): Throwable = when (cause) {
         statusCode = HttpStatusCode.NotFound,
         errorCode = "OCCURRENCE_NOT_FOUND",
         message = cause.message ?: "Occurrence not found",
+    )
+
+    is AccountAccessDeniedException -> ApiException(
+        statusCode = HttpStatusCode.Forbidden,
+        errorCode = "ACCOUNT_ACCESS_DENIED",
+        message = cause.message ?: "Access denied",
     )
 
     is InvalidOccurrenceAmountException -> ApiException(

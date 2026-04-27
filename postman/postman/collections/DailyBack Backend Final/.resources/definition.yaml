@@ -1,0 +1,9 @@
+$kind: collection
+description: Final backend collection generated from implemented Ktor routes.
+variables:
+  baseUrl: http://localhost:8080
+  token: ""
+  accountId: ""
+  categoryId: ""
+  occurrenceId: ""
+  familyMemberId: ""

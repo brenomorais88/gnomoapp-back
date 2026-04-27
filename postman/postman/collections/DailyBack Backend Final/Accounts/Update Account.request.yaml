@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts/{{accountId}}"
+method: PUT
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "title": "Internet Casa",
+      "baseAmount": "130.90",
+      "startDate": "2026-05-01",
+      "endDate": null,
+      "recurrenceType": "MONTHLY",
+      "categoryId": "{{categoryId}}",
+      "notes": "Atualizado",
+      "active": true
+    }
+order: 5000

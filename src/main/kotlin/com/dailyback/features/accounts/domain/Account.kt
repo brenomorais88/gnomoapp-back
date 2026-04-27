@@ -15,6 +15,11 @@ data class Account(
     val categoryId: UUID,
     val notes: String?,
     val active: Boolean,
+    val ownershipType: AccountOwnershipType,
+    val ownerUserId: UUID?,
+    val familyId: UUID?,
+    val createdByUserId: UUID?,
+    val responsibleMemberId: UUID?,
     val createdAt: Instant,
     val updatedAt: Instant,
 )

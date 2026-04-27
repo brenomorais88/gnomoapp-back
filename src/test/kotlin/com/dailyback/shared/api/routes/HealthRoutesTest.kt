@@ -5,7 +5,9 @@ import com.dailyback.app.config.AppConfig
 import com.dailyback.app.config.DatabaseConfig
 import com.dailyback.app.config.FlywayConfig
 import com.dailyback.app.config.SchedulerConfig
+import com.dailyback.app.config.JwtAuthConfig
 import com.dailyback.app.config.SeedConfig
+import com.dailyback.app.config.SecurityConfig
 import com.dailyback.app.config.ServerConfig
 import com.dailyback.shared.domain.health.DatabaseHealthChecker
 import io.ktor.client.request.get
@@ -82,5 +84,13 @@ private fun testConfig(): AppConfig = AppConfig(
     scheduler = SchedulerConfig(
         recurrenceMaintenanceEnabled = false,
         recurrenceMaintenanceIntervalHours = 24,
+    ),
+    security = SecurityConfig(
+        jwt = JwtAuthConfig(
+            secret = "unit-test-secret-key-for-jwt-hs256-must-be-long-enough",
+            issuer = "test",
+            audience = "test",
+            accessTokenTtlSeconds = 3600,
+        ),
     ),
 )

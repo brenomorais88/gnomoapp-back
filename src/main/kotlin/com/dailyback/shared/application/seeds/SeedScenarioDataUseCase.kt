@@ -56,13 +56,13 @@ class SeedScenarioDataUseCase(
 
             exec(
                 """
-                INSERT INTO categories (id, name, color, created_at, updated_at)
+                INSERT INTO categories (id, name, color, family_id, owner_user_id, created_at, updated_at)
                 VALUES
-                    ('20000000-0000-0000-0000-000000000001', '[TMP] Housing', '#1F2937', NOW(), NOW()),
-                    ('20000000-0000-0000-0000-000000000002', '[TMP] Utilities', '#2563EB', NOW(), NOW()),
-                    ('20000000-0000-0000-0000-000000000003', '[TMP] Food', '#16A34A', NOW(), NOW()),
-                    ('20000000-0000-0000-0000-000000000004', '[TMP] Transport', '#9333EA', NOW(), NOW()),
-                    ('20000000-0000-0000-0000-000000000005', '[TMP] Leisure', '#EA580C', NOW(), NOW());
+                    ('20000000-0000-0000-0000-000000000001', '[TMP] Housing', '#1F2937', NULL, NULL, NOW(), NOW()),
+                    ('20000000-0000-0000-0000-000000000002', '[TMP] Utilities', '#2563EB', NULL, NULL, NOW(), NOW()),
+                    ('20000000-0000-0000-0000-000000000003', '[TMP] Food', '#16A34A', NULL, NULL, NOW(), NOW()),
+                    ('20000000-0000-0000-0000-000000000004', '[TMP] Transport', '#9333EA', NULL, NULL, NOW(), NOW()),
+                    ('20000000-0000-0000-0000-000000000005', '[TMP] Leisure', '#EA580C', NULL, NULL, NOW(), NOW());
                 """.trimIndent(),
             )
 
@@ -70,7 +70,9 @@ class SeedScenarioDataUseCase(
                 """
                 INSERT INTO accounts (
                     id, title, base_amount, start_date, end_date, recurrence_type,
-                    category_id, notes, active, created_at, updated_at
+                    category_id, notes, active,
+                    ownership_type, owner_user_id, family_id, created_by_user_id, responsible_member_id,
+                    created_at, updated_at
                 ) VALUES
                     (
                         '10000000-0000-0000-0000-000000000001',
@@ -82,6 +84,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000001',
                         'Core fixed monthly cost',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -95,6 +102,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000005',
                         'Monthly subscription with end date',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -108,6 +120,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000003',
                         'Weekly household groceries',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -121,6 +138,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000003',
                         'Daily small recurring expense',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -134,6 +156,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000004',
                         'One-time maintenance expense',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -147,6 +174,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000005',
                         'Inactive recurring account',
                         FALSE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -160,6 +192,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000004',
                         'Future one-time planned expense',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     ),
@@ -173,6 +210,11 @@ class SeedScenarioDataUseCase(
                         '20000000-0000-0000-0000-000000000002',
                         'Zero amount recurring account',
                         TRUE,
+                        'FAMILY',
+                        NULL,
+                        (SELECT id FROM families ORDER BY created_at LIMIT 1),
+                        (SELECT id FROM users ORDER BY created_at LIMIT 1),
+                        NULL,
                         NOW(),
                         NOW()
                     );

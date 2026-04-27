@@ -1,7 +1,20 @@
 package com.dailyback.features.accountoccurrences.application
 
+import com.dailyback.features.accounts.application.AccountAccessContextResolver
+import com.dailyback.features.accounts.application.AccountRepository
+import com.dailyback.features.accounts.application.AccountViewerQuery
+import com.dailyback.features.accounts.application.SaveAccountCommand
+import com.dailyback.features.accounts.domain.Account
 import com.dailyback.features.accounts.domain.AccountOccurrence
+import com.dailyback.features.accounts.domain.AccountOwnershipType
+import com.dailyback.features.accounts.domain.RecurrenceType
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
+import com.dailyback.features.families.application.FamilyMemberPermissionRepository
+import com.dailyback.features.families.application.FamilyMemberRepository
+import com.dailyback.features.families.domain.FamilyMember
+import com.dailyback.shared.domain.family.FamilyMemberPermissionFlags
+import com.dailyback.shared.domain.family.FamilyMemberRole
+import com.dailyback.shared.domain.family.FamilyMembershipStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -11,106 +24,91 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
-class OccurrenceUseCasesTest {
+private val occurrenceTestUserId: UUID =
+    UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
-    @Test
-    fun `mark as paid`() {
-        val repository = fakeRepository()
-        val useCase = MarkOccurrencePaidUseCase(repository)
+private object OccurrenceNoFamilyMemberRepository : FamilyMemberRepository {
+    override fun findActiveMembershipForUser(userId: UUID): FamilyMember? = null
 
-        val updated = useCase.execute(repository.occurrenceA.id)
+    override fun findActiveMembersByFamily(familyId: UUID): List<FamilyMember> = emptyList()
 
-        assertEquals(OccurrenceStatus.PAID, updated.status)
-        assertTrue(updated.paidAt != null)
-    }
+    override fun findNonRemovedMemberInFamilyByUser(familyId: UUID, userId: UUID): FamilyMember? = null
 
-    @Test
-    fun `unmark as paid`() {
-        val repository = fakeRepository().apply {
-            markPaid(occurrenceA.id)
+    override fun findConflictingInviteInFamily(
+        familyId: UUID,
+        documentNormalized: String?,
+        emailLower: String?,
+        phoneDigits: String?,
+    ): FamilyMember? = null
+
+    override fun insertMember(
+        familyId: UUID,
+        userId: UUID?,
+        displayName: String,
+        document: String?,
+        email: String?,
+        phone: String?,
+        role: FamilyMemberRole,
+        status: FamilyMembershipStatus,
+        invitedByUserId: UUID?,
+        joinedAt: Instant?,
+    ): FamilyMember = throw UnsupportedOperationException()
+
+    override fun findMemberByIdInFamily(memberId: UUID, familyId: UUID): FamilyMember? = null
+
+    override fun countActiveAdminsInFamily(familyId: UUID): Int = 0
+
+    override fun updateMemberRole(memberId: UUID, familyId: UUID, newRole: FamilyMemberRole): FamilyMember? = null
+
+    override fun markMemberRemoved(memberId: UUID, familyId: UUID): FamilyMember? = null
+}
+
+private object OccurrenceStubPermissionRepository : FamilyMemberPermissionRepository {
+    override fun findByMemberId(memberId: UUID): FamilyMemberPermissionFlags? = null
+
+    override fun upsert(memberId: UUID, flags: FamilyMemberPermissionFlags): FamilyMemberPermissionFlags =
+        throw UnsupportedOperationException()
+}
+
+private val occurrenceAccountAccess = AccountAccessContextResolver(
+    OccurrenceNoFamilyMemberRepository,
+    OccurrenceStubPermissionRepository,
+)
+
+private class SinglePersonalAccountRepository(
+    private val account: Account,
+) : AccountRepository {
+    override fun findVisibleForUser(query: AccountViewerQuery): List<Account> =
+        findVisibleAccountIds(query).mapNotNull { id -> if (id == account.id) account else null }
+
+    override fun findVisibleAccountIds(query: AccountViewerQuery): Set<UUID> =
+        if (account.ownershipType == AccountOwnershipType.PERSONAL && account.ownerUserId == query.userId) {
+            setOf(account.id)
+        } else {
+            emptySet()
         }
-        val useCase = UnmarkOccurrencePaidUseCase(repository)
 
-        val updated = useCase.execute(repository.occurrenceA.id)
+    override fun findActiveRecurringAccounts(): List<Account> = emptyList()
 
-        assertEquals(OccurrenceStatus.PENDING, updated.status)
-        assertEquals(null, updated.paidAt)
-    }
+    override fun findById(id: UUID): Account? = if (id == account.id) account else null
 
-    @Test
-    fun `override amount changes only one occurrence`() {
-        val repository = fakeRepository()
-        val useCase = OverrideOccurrenceAmountUseCase(repository)
+    override fun create(command: SaveAccountCommand): Account = throw UnsupportedOperationException()
 
-        useCase.execute(repository.occurrenceA.id, BigDecimal("555.55"))
+    override fun update(id: UUID, command: SaveAccountCommand): Account = throw UnsupportedOperationException()
 
-        val first = repository.findById(repository.occurrenceA.id)!!
-        val second = repository.findById(repository.occurrenceB.id)!!
-        assertEquals(BigDecimal("555.55"), first.amountSnapshot)
-        assertEquals(BigDecimal("20.00"), second.amountSnapshot)
-    }
+    override fun setActive(id: UUID, active: Boolean): Account = throw UnsupportedOperationException()
 
-    @Test
-    fun `list filtering by status`() {
-        val repository = fakeRepository().apply {
-            markPaid(occurrenceA.id)
-        }
-        val useCase = ListOccurrencesUseCase(repository)
+    override fun delete(id: UUID) = throw UnsupportedOperationException()
 
-        val result = useCase.execute(OccurrenceFilters(status = OccurrenceStatus.PAID))
+    override fun upsertOccurrences(occurrences: List<com.dailyback.features.accounts.application.OccurrenceSnapshot>) =
+        throw UnsupportedOperationException()
 
-        assertEquals(1, result.size)
-        assertEquals(OccurrenceStatus.PAID, result.first().status)
-    }
+    override fun deleteFuturePendingOccurrences(accountId: UUID, fromDate: LocalDate) =
+        throw UnsupportedOperationException()
 
-    @Test
-    fun `list filtering by category`() {
-        val repository = fakeRepository()
-        val useCase = ListOccurrencesUseCase(repository)
+    override fun findOccurrencesByAccountId(accountId: UUID): List<AccountOccurrence> = emptyList()
 
-        val result = useCase.execute(OccurrenceFilters(categoryId = repository.categoryB))
-
-        assertEquals(1, result.size)
-        assertEquals(repository.categoryB, result.first().categoryIdSnapshot)
-    }
-
-    @Test
-    fun `list filtering by text`() {
-        val repository = fakeRepository()
-        val useCase = ListOccurrencesUseCase(repository)
-
-        val result = useCase.execute(OccurrenceFilters(text = "market"))
-
-        assertEquals(1, result.size)
-        assertTrue(result.first().titleSnapshot.contains("Market"))
-    }
-
-    @Test
-    fun `list filtering by date range`() {
-        val repository = fakeRepository()
-        val useCase = ListOccurrencesUseCase(repository)
-
-        val result = useCase.execute(
-            OccurrenceFilters(
-                startDate = LocalDate.parse("2026-04-10"),
-                endDate = LocalDate.parse("2026-04-20"),
-            ),
-        )
-
-        assertEquals(1, result.size)
-        assertEquals(LocalDate.parse("2026-04-15"), result.first().dueDate)
-    }
-
-    @Test
-    fun `default sorting by due date ascending`() {
-        val repository = fakeRepository()
-        val useCase = ListOccurrencesUseCase(repository)
-
-        val result = useCase.execute(OccurrenceFilters())
-
-        assertTrue(result[0].dueDate <= result[1].dueDate)
-        assertTrue(result[1].dueDate <= result[2].dueDate)
-    }
+    override fun hasRelevantHistory(accountId: UUID, today: LocalDate): Boolean = false
 }
 
 private class FakeOccurrenceRepository(
@@ -126,7 +124,11 @@ private class FakeOccurrenceRepository(
     )
 
     override fun findByFilters(filters: OccurrenceFilters): List<AccountOccurrence> {
-        var data = items.values.toList()
+        val accountIds = filters.accountIds
+        if (accountIds == null || accountIds.isEmpty()) {
+            return emptyList()
+        }
+        var data = items.values.filter { it.accountId in accountIds }
         filters.status?.let { status -> data = data.filter { it.status == status } }
         filters.categoryId?.let { categoryId -> data = data.filter { it.categoryIdSnapshot == categoryId } }
         filters.text?.trim()?.takeIf { it.isNotBlank() }?.let { text ->
@@ -165,12 +167,35 @@ private class FakeOccurrenceRepository(
     }
 }
 
-private fun fakeRepository(): FakeOccurrenceRepository {
+private data class OccurrenceTestContext(
+    val occurrenceRepo: FakeOccurrenceRepository,
+    val accountRepo: AccountRepository,
+)
+
+private fun occurrenceTestContext(): OccurrenceTestContext {
     val accountId = UUID.randomUUID()
     val categoryA = UUID.randomUUID()
     val categoryB = UUID.randomUUID()
     val now = Instant.parse("2026-04-01T00:00:00Z")
-    return FakeOccurrenceRepository(
+    val account = Account(
+        id = accountId,
+        title = "Test",
+        baseAmount = BigDecimal.ZERO,
+        startDate = LocalDate.parse("2026-04-01"),
+        endDate = null,
+        recurrenceType = RecurrenceType.UNIQUE,
+        categoryId = categoryA,
+        notes = null,
+        active = true,
+        ownershipType = AccountOwnershipType.PERSONAL,
+        ownerUserId = occurrenceTestUserId,
+        familyId = null,
+        createdByUserId = occurrenceTestUserId,
+        responsibleMemberId = null,
+        createdAt = now,
+        updatedAt = now,
+    )
+    val occurrenceRepo = FakeOccurrenceRepository(
         occurrenceA = AccountOccurrence(
             id = UUID.randomUUID(),
             accountId = accountId,
@@ -212,4 +237,108 @@ private fun fakeRepository(): FakeOccurrenceRepository {
         ),
         categoryB = categoryB,
     )
+    return OccurrenceTestContext(occurrenceRepo, SinglePersonalAccountRepository(account))
+}
+
+class OccurrenceUseCasesTest {
+
+    @Test
+    fun `mark as paid`() {
+        val ctx = occurrenceTestContext()
+        val useCase = MarkOccurrencePaidUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val updated = useCase.execute(occurrenceTestUserId, ctx.occurrenceRepo.occurrenceA.id)
+
+        assertEquals(OccurrenceStatus.PAID, updated.status)
+        assertFalse(updated.paidAt == null)
+    }
+
+    @Test
+    fun `unmark as paid`() {
+        val ctx = occurrenceTestContext().apply {
+            occurrenceRepo.markPaid(occurrenceRepo.occurrenceA.id)
+        }
+        val useCase = UnmarkOccurrencePaidUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val updated = useCase.execute(occurrenceTestUserId, ctx.occurrenceRepo.occurrenceA.id)
+
+        assertEquals(OccurrenceStatus.PENDING, updated.status)
+        assertEquals(null, updated.paidAt)
+    }
+
+    @Test
+    fun `override amount changes only one occurrence`() {
+        val ctx = occurrenceTestContext()
+        val useCase = OverrideOccurrenceAmountUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        useCase.execute(occurrenceTestUserId, ctx.occurrenceRepo.occurrenceA.id, BigDecimal("555.55"))
+
+        val first = ctx.occurrenceRepo.findById(ctx.occurrenceRepo.occurrenceA.id)!!
+        val second = ctx.occurrenceRepo.findById(ctx.occurrenceRepo.occurrenceB.id)!!
+        assertEquals(BigDecimal("555.55"), first.amountSnapshot)
+        assertEquals(BigDecimal("20.00"), second.amountSnapshot)
+    }
+
+    @Test
+    fun `list filtering by status`() {
+        val ctx = occurrenceTestContext().apply {
+            occurrenceRepo.markPaid(occurrenceRepo.occurrenceA.id)
+        }
+        val useCase = ListOccurrencesUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val result = useCase.execute(occurrenceTestUserId, OccurrenceFilters(status = OccurrenceStatus.PAID))
+
+        assertEquals(1, result.size)
+        assertEquals(OccurrenceStatus.PAID, result.first().status)
+    }
+
+    @Test
+    fun `list filtering by category`() {
+        val ctx = occurrenceTestContext()
+        val useCase = ListOccurrencesUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val result = useCase.execute(occurrenceTestUserId, OccurrenceFilters(categoryId = ctx.occurrenceRepo.categoryB))
+
+        assertEquals(1, result.size)
+        assertEquals(ctx.occurrenceRepo.categoryB, result.first().categoryIdSnapshot)
+    }
+
+    @Test
+    fun `list filtering by text`() {
+        val ctx = occurrenceTestContext()
+        val useCase = ListOccurrencesUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val result = useCase.execute(occurrenceTestUserId, OccurrenceFilters(text = "market"))
+
+        assertEquals(1, result.size)
+        assertTrue(result.first().titleSnapshot.contains("Market"))
+    }
+
+    @Test
+    fun `list filtering by date range`() {
+        val ctx = occurrenceTestContext()
+        val useCase = ListOccurrencesUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val result = useCase.execute(
+            occurrenceTestUserId,
+            OccurrenceFilters(
+                startDate = LocalDate.parse("2026-04-10"),
+                endDate = LocalDate.parse("2026-04-20"),
+            ),
+        )
+
+        assertEquals(1, result.size)
+        assertEquals(LocalDate.parse("2026-04-15"), result.first().dueDate)
+    }
+
+    @Test
+    fun `default sorting by due date ascending`() {
+        val ctx = occurrenceTestContext()
+        val useCase = ListOccurrencesUseCase(ctx.occurrenceRepo, ctx.accountRepo, occurrenceAccountAccess)
+
+        val result = useCase.execute(occurrenceTestUserId, OccurrenceFilters())
+
+        assertTrue(result[0].dueDate <= result[1].dueDate)
+        assertTrue(result[1].dueDate <= result[2].dueDate)
+    }
 }

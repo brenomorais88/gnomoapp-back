@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{baseUrl}}/families/current/members"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "displayName": "João",
+      "document": "98765432100",
+      "email": "joao@example.com",
+      "phone": "+5511988888888"
+    }
+order: 2000

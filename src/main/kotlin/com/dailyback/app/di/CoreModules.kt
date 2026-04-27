@@ -9,6 +9,7 @@ import com.dailyback.features.accountoccurrences.application.OccurrenceRepositor
 import com.dailyback.features.accountoccurrences.application.OverrideOccurrenceAmountUseCase
 import com.dailyback.features.accountoccurrences.application.UnmarkOccurrencePaidUseCase
 import com.dailyback.features.accountoccurrences.infrastructure.ExposedOccurrenceRepository
+import com.dailyback.features.accounts.application.AccountAccessContextResolver
 import com.dailyback.features.accounts.application.AccountRepository
 import com.dailyback.features.accounts.application.ActivateAccountUseCase
 import com.dailyback.features.accounts.application.CreateAccountUseCase
@@ -30,6 +31,24 @@ import com.dailyback.features.dashboard.application.GetDashboardCategorySummaryU
 import com.dailyback.features.dashboard.application.GetDashboardDayDetailsUseCase
 import com.dailyback.features.dashboard.application.GetDashboardHomeSummaryUseCase
 import com.dailyback.features.dashboard.application.GetDashboardNext12MonthsProjectionUseCase
+import com.dailyback.features.families.application.DefaultFamilyPermissionAuthorizer
+import com.dailyback.features.families.application.FamilyMemberPermissionRepository
+import com.dailyback.features.families.application.FamilyMemberPermissionService
+import com.dailyback.features.families.application.FamilyMemberRepository
+import com.dailyback.features.families.application.FamilyPendingMemberLinkRepository
+import com.dailyback.features.families.application.FamilyPermissionAuthorizer
+import com.dailyback.features.families.application.FamilyRepository
+import com.dailyback.features.families.application.FamilyService
+import com.dailyback.features.families.infrastructure.ExposedFamilyMemberPermissionRepository
+import com.dailyback.features.families.infrastructure.ExposedFamilyMemberRepository
+import com.dailyback.features.families.infrastructure.ExposedFamilyPendingMemberLinkRepository
+import com.dailyback.features.families.infrastructure.ExposedFamilyRepository
+import com.dailyback.features.users.application.JwtTokenService
+import com.dailyback.features.users.application.PasswordHasher
+import com.dailyback.features.users.application.UserAuthService
+import com.dailyback.features.users.application.UserRepository
+import com.dailyback.features.users.infrastructure.BcryptPasswordHasher
+import com.dailyback.features.users.infrastructure.ExposedUserRepository
 import com.dailyback.shared.application.maintenance.RecurrenceMaintenanceService
 import com.dailyback.shared.application.health.GetHealthStatusUseCase
 import com.dailyback.shared.application.seeds.CategorySeedRepository
@@ -48,7 +67,12 @@ fun coreModule(
     appConfig: AppConfig,
     databaseHealthCheckerOverride: DatabaseHealthChecker? = null,
     categoryRepositoryOverride: CategoryRepository? = null,
+    userAuthServiceOverride: UserAuthService? = null,
+    familyPermissionAuthorizerOverride: FamilyPermissionAuthorizer? = null,
+    familyMemberRepositoryOverride: FamilyMemberRepository? = null,
 ) = module {
+    includes(foundationModule())
+
     single { appConfig }
     single { appConfig.database }
     single { appConfig.flyway }
@@ -78,31 +102,58 @@ fun coreModule(
     single<CategorySeedRepository> { ExposedCategorySeedRepository(get()) }
     single { SeedDefaultCategoriesUseCase(get(), get()) }
     single { SeedScenarioDataUseCase(get()) }
-    single { ListCategoriesUseCase(get()) }
-    single { GetCategoryByIdUseCase(get()) }
-    single { CreateCategoryUseCase(get()) }
-    single { UpdateCategoryUseCase(get()) }
-    single { DeleteCategoryUseCase(get()) }
+    single { ListCategoriesUseCase(get(), get()) }
+    single { GetCategoryByIdUseCase(get(), get()) }
+    single { CreateCategoryUseCase(get(), get()) }
+    single { UpdateCategoryUseCase(get(), get()) }
+    single { DeleteCategoryUseCase(get(), get()) }
 
     single { RecurrenceGenerationService() }
-    single { ListAccountsUseCase(get()) }
-    single { GetAccountByIdUseCase(get()) }
-    single { CreateAccountUseCase(get(), get(), get()) }
-    single { UpdateAccountUseCase(get(), get(), get()) }
-    single { ActivateAccountUseCase(get(), get(), get()) }
-    single { DeactivateAccountUseCase(get(), get()) }
-    single { DeleteAccountUseCase(get(), get()) }
+    single { AccountAccessContextResolver(get(), get()) }
+    single { ListAccountsUseCase(get(), get()) }
+    single { GetAccountByIdUseCase(get(), get()) }
+    single { CreateAccountUseCase(get(), get(), get(), get(), get(), get()) }
+    single { UpdateAccountUseCase(get(), get(), get(), get(), get(), get()) }
+    single { ActivateAccountUseCase(get(), get(), get(), get()) }
+    single { DeactivateAccountUseCase(get(), get(), get()) }
+    single { DeleteAccountUseCase(get(), get(), get()) }
 
-    single { ListOccurrencesUseCase(get()) }
-    single { GetOccurrenceByIdUseCase(get()) }
-    single { MarkOccurrencePaidUseCase(get()) }
-    single { UnmarkOccurrencePaidUseCase(get()) }
-    single { OverrideOccurrenceAmountUseCase(get()) }
-    single { GetDashboardHomeSummaryUseCase(get(), get()) }
-    single { GetDashboardDayDetailsUseCase(get()) }
-    single { GetDashboardCategorySummaryUseCase(get(), get()) }
-    single { GetDashboardNext12MonthsProjectionUseCase(get(), get()) }
+    single { ListOccurrencesUseCase(get(), get(), get()) }
+    single { GetOccurrenceByIdUseCase(get(), get(), get()) }
+    single { MarkOccurrencePaidUseCase(get(), get(), get()) }
+    single { UnmarkOccurrencePaidUseCase(get(), get(), get()) }
+    single { OverrideOccurrenceAmountUseCase(get(), get(), get()) }
+    single { GetDashboardHomeSummaryUseCase(get(), get(), get(), get()) }
+    single { GetDashboardDayDetailsUseCase(get(), get(), get()) }
+    single { GetDashboardCategorySummaryUseCase(get(), get(), get(), get()) }
+    single { GetDashboardNext12MonthsProjectionUseCase(get(), get(), get(), get()) }
     single { RecurrenceMaintenanceService(get(), get(), get()) }
     single { GetHealthStatusUseCase(get(), get()) }
     single { StartupInitializer(get(), get(), get(), get(), get(), get()) }
+
+    single { JwtTokenService(get<AppConfig>().security.jwt) }
+    single<PasswordHasher> { BcryptPasswordHasher() }
+    single<UserRepository> { ExposedUserRepository(get()) }
+    single<FamilyRepository> { ExposedFamilyRepository(get()) }
+    if (familyMemberRepositoryOverride != null) {
+        single<FamilyMemberRepository> { familyMemberRepositoryOverride }
+    } else {
+        single<FamilyMemberRepository> { ExposedFamilyMemberRepository(get()) }
+    }
+    single<FamilyMemberPermissionRepository> { ExposedFamilyMemberPermissionRepository(get()) }
+    single<FamilyPendingMemberLinkRepository> { ExposedFamilyPendingMemberLinkRepository(get()) }
+    single { FamilyMemberPermissionService(get(), get()) }
+    single<FamilyPermissionAuthorizer> {
+        familyPermissionAuthorizerOverride ?: DefaultFamilyPermissionAuthorizer(get(), get())
+    }
+    single { FamilyService(get(), get(), get(), get()) }
+    single<UserAuthService> {
+        userAuthServiceOverride ?: UserAuthService(
+            userRepository = get(),
+            pendingMemberLinkRepository = get(),
+            passwordHasher = get(),
+            jwtTokenService = get(),
+            loginIdentifierParser = get(),
+        )
+    }
 }

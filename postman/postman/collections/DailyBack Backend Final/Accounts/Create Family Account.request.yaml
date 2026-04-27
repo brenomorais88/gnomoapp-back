@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "ownershipType": "FAMILY",
+      "responsibleMemberId": "{{familyMemberId}}",
+      "title": "Aluguel",
+      "baseAmount": "1500.00",
+      "startDate": "2026-05-01",
+      "endDate": null,
+      "recurrenceType": "MONTHLY",
+      "categoryId": "{{categoryId}}",
+      "notes": "Casa",
+      "active": true
+    }
+order: 4000

@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "ownershipType": "PERSONAL",
+      "title": "Internet",
+      "baseAmount": "120.50",
+      "startDate": "2026-05-01",
+      "endDate": null,
+      "recurrenceType": "MONTHLY",
+      "categoryId": "{{categoryId}}",
+      "notes": "Plano fibra",
+      "active": true
+    }
+order: 3000
