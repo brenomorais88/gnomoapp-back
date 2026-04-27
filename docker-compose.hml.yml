@@ -1,3 +1,24 @@
 services:
   app:
     image: ${APP_IMAGE_NAME}:${IMAGE_TAG}
+    container_name: daily-back-app-hml
+    env_file:
+      - .env.hml
+    environment:
+      APP_HOST: ${APP_HOST:-0.0.0.0}
+      APP_PORT: ${APP_PORT:-8080}
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-daily}
+      DB_USER: ${DB_USER:-daily}
+      DB_PASSWORD: ${DB_PASSWORD:-daily}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      DB_SSL: ${DB_SSL:-false}
+      FLYWAY_ENABLED: ${FLYWAY_ENABLED:-true}
+      FLYWAY_LOCATION: ${FLYWAY_LOCATION:-classpath:db/migration}
+      SEED_ENABLED: ${SEED_ENABLED:-false}
+      SEED_SCENARIO_ENABLED: ${SEED_SCENARIO_ENABLED:-false}
+      RECURRENCE_MAINTENANCE_ENABLED: ${RECURRENCE_MAINTENANCE_ENABLED:-true}
+      RECURRENCE_MAINTENANCE_INTERVAL_HOURS: ${RECURRENCE_MAINTENANCE_INTERVAL_HOURS:-24}
+    ports:
+      - "${APP_EXTERNAL_PORT:-8081}:8080"

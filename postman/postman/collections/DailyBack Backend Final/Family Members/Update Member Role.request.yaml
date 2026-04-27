@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/families/current/members/{{familyMemberId}}/role"
+method: PATCH
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "role": "ADMIN"
+    }
+order: 3000

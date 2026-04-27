@@ -1,9 +1,11 @@
 package com.dailyback.features.accounts.application
 
 import com.dailyback.features.accounts.domain.Account
+import com.dailyback.features.accounts.domain.AccountOwnershipType
 import com.dailyback.features.accounts.domain.RecurrenceType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
@@ -121,6 +123,42 @@ class RecurrenceGenerationServiceTest {
             snapshots.map { it.dueDate.toString() },
         )
     }
+
+    @Test
+    fun `generateSnapshots rejects PERSONAL account without ownerUserId`() {
+        val account = accountOf(
+            recurrenceType = RecurrenceType.UNIQUE,
+            startDate = LocalDate.parse("2026-01-10"),
+        ).copy(ownerUserId = null)
+
+        assertFailsWith<IllegalArgumentException> {
+            service.generateSnapshots(
+                account = account,
+                fromDate = LocalDate.parse("2026-01-01"),
+                horizonEndDate = LocalDate.parse("2026-12-31"),
+            )
+        }
+    }
+
+    @Test
+    fun `generateSnapshots rejects FAMILY account without familyId`() {
+        val account = accountOf(
+            recurrenceType = RecurrenceType.UNIQUE,
+            startDate = LocalDate.parse("2026-01-10"),
+        ).copy(
+            ownershipType = AccountOwnershipType.FAMILY,
+            ownerUserId = null,
+            familyId = null,
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            service.generateSnapshots(
+                account = account,
+                fromDate = LocalDate.parse("2026-01-01"),
+                horizonEndDate = LocalDate.parse("2026-12-31"),
+            )
+        }
+    }
 }
 
 private fun accountOf(
@@ -137,6 +175,11 @@ private fun accountOf(
     categoryId = UUID.randomUUID(),
     notes = null,
     active = true,
+    ownershipType = AccountOwnershipType.PERSONAL,
+    ownerUserId = UUID.fromString("11111111-1111-1111-1111-111111111111"),
+    familyId = null,
+    createdByUserId = UUID.fromString("11111111-1111-1111-1111-111111111111"),
+    responsibleMemberId = null,
     createdAt = Instant.parse("2026-01-01T00:00:00Z"),
     updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
 )

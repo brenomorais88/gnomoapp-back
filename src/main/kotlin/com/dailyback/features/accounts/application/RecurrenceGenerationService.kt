@@ -2,16 +2,22 @@ package com.dailyback.features.accounts.application
 
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
 import com.dailyback.features.accounts.domain.Account
+import com.dailyback.features.accounts.domain.AccountOwnershipType
 import com.dailyback.features.accounts.domain.RecurrenceType
 import java.time.LocalDate
 import java.time.YearMonth
 
+/**
+ * Builds pending occurrence snapshots for an account window. User-facing visibility and mutations
+ * are enforced when listing or changing occurrences; this service only requires a consistent account ownership context.
+ */
 class RecurrenceGenerationService {
     fun generateSnapshots(
         account: Account,
         fromDate: LocalDate,
         horizonEndDate: LocalDate,
     ): List<OccurrenceSnapshot> {
+        requireOwnershipContext(account)
         if (!account.active) {
             return emptyList()
         }
@@ -88,5 +94,19 @@ class RecurrenceGenerationService {
 
     private fun minDate(a: LocalDate, b: LocalDate): LocalDate = if (a <= b) a else b
     private fun maxDate(a: LocalDate, b: LocalDate): LocalDate = if (a >= b) a else b
+
+    private fun requireOwnershipContext(account: Account) {
+        when (account.ownershipType) {
+            AccountOwnershipType.PERSONAL ->
+                require(account.ownerUserId != null) {
+                    "PERSONAL account must have ownerUserId to generate occurrences"
+                }
+
+            AccountOwnershipType.FAMILY ->
+                require(account.familyId != null) {
+                    "FAMILY account must have familyId to generate occurrences"
+                }
+        }
+    }
 }
 

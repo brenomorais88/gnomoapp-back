@@ -1,0 +1,7 @@
+$kind: http-request
+description: JWT required.
+url: "{{baseUrl}}/auth/me"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+order: 1000

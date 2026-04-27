@@ -1,0 +1,14 @@
+$kind: http-request
+description: Public endpoint. Login accepts document/email/phone.
+url: "{{baseUrl}}/auth/login"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "login": "breno@example.com",
+      "password": "StrongPass#123"
+    }
+order: 2000

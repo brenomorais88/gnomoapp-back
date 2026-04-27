@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts/{{accountId}}/deactivate"
+method: PATCH
+headers:
+  Authorization: Bearer {{token}}
+order: 7000

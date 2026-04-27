@@ -13,10 +13,14 @@ class ExposedCategorySeedRepository(
         transaction {
             exec(
                 """
-                INSERT INTO categories (name, color, created_at, updated_at)
-                VALUES ('$escapedName', NULL, NOW(), NOW())
-                ON CONFLICT (name) DO UPDATE
-                SET updated_at = NOW()
+                INSERT INTO categories (name, color, family_id, owner_user_id, created_at, updated_at)
+                SELECT '$escapedName', NULL, NULL, NULL, NOW(), NOW()
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM categories c
+                    WHERE c.family_id IS NULL
+                      AND c.owner_user_id IS NULL
+                      AND lower(c.name) = lower('$escapedName')
+                )
                 """.trimIndent(),
             )
         }

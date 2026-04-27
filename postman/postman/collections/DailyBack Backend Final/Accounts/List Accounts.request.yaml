@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts?scope=VISIBLE_TO_ME"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  scope: VISIBLE_TO_ME
+order: 1000

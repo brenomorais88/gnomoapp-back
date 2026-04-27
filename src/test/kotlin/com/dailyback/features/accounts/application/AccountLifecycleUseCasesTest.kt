@@ -3,7 +3,16 @@ package com.dailyback.features.accounts.application
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
 import com.dailyback.features.accounts.domain.Account
 import com.dailyback.features.accounts.domain.AccountOccurrence
+import com.dailyback.features.accounts.domain.AccountOwnershipType
 import com.dailyback.features.accounts.domain.RecurrenceType
+import com.dailyback.features.categories.application.CategoryRepository
+import com.dailyback.features.categories.domain.Category
+import com.dailyback.features.families.application.FamilyMemberPermissionRepository
+import com.dailyback.features.families.application.FamilyMemberRepository
+import com.dailyback.features.families.domain.FamilyMember
+import com.dailyback.shared.domain.family.FamilyMemberPermissionFlags
+import com.dailyback.shared.domain.family.FamilyMemberRole
+import com.dailyback.shared.domain.family.FamilyMembershipStatus
 import com.dailyback.shared.time.UtcClock
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,17 +25,129 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.UUID
 
+private val accountLifecycleTestUserId: UUID =
+    UUID.fromString("22222222-2222-2222-2222-222222222222")
+
+private val lifecycleTestFamilyId: UUID =
+    UUID.fromString("33333333-3333-3333-3333-333333333333")
+
+private val lifecycleTestMemberId: UUID =
+    UUID.fromString("44444444-4444-4444-4444-444444444444")
+
+private object LifecycleStubPermissionRepository : FamilyMemberPermissionRepository {
+    override fun findByMemberId(memberId: UUID): FamilyMemberPermissionFlags? = null
+
+    override fun upsert(memberId: UUID, flags: FamilyMemberPermissionFlags): FamilyMemberPermissionFlags =
+        throw UnsupportedOperationException()
+}
+
+private object AccountLifecycleFamilyMemberRepository : FamilyMemberRepository {
+    override fun findActiveMembershipForUser(userId: UUID): FamilyMember? {
+        if (userId != accountLifecycleTestUserId) return null
+        val now = Instant.parse("2026-01-01T00:00:00Z")
+        return FamilyMember(
+            id = lifecycleTestMemberId,
+            familyId = lifecycleTestFamilyId,
+            userId = userId,
+            displayName = "Lifecycle",
+            document = null,
+            email = null,
+            phone = null,
+            role = FamilyMemberRole.ADMIN,
+            status = FamilyMembershipStatus.ACTIVE,
+            invitedByUserId = null,
+            joinedAt = now,
+            createdAt = now,
+            updatedAt = now,
+        )
+    }
+
+    override fun findActiveMembersByFamily(familyId: UUID): List<FamilyMember> = emptyList()
+
+    override fun findNonRemovedMemberInFamilyByUser(familyId: UUID, userId: UUID): FamilyMember? = null
+
+    override fun findConflictingInviteInFamily(
+        familyId: UUID,
+        documentNormalized: String?,
+        emailLower: String?,
+        phoneDigits: String?,
+    ): FamilyMember? = null
+
+    override fun insertMember(
+        familyId: UUID,
+        userId: UUID?,
+        displayName: String,
+        document: String?,
+        email: String?,
+        phone: String?,
+        role: FamilyMemberRole,
+        status: FamilyMembershipStatus,
+        invitedByUserId: UUID?,
+        joinedAt: Instant?,
+    ): FamilyMember = throw UnsupportedOperationException()
+
+    override fun findMemberByIdInFamily(memberId: UUID, familyId: UUID): FamilyMember? = null
+
+    override fun countActiveAdminsInFamily(familyId: UUID): Int = 0
+
+    override fun updateMemberRole(memberId: UUID, familyId: UUID, newRole: FamilyMemberRole): FamilyMember? = null
+
+    override fun markMemberRemoved(memberId: UUID, familyId: UUID): FamilyMember? = null
+}
+
+private val lifecycleAccountAccess = AccountAccessContextResolver(
+    AccountLifecycleFamilyMemberRepository,
+    LifecycleStubPermissionRepository,
+)
+
+private fun createInput(
+    title: String,
+    baseAmount: BigDecimal,
+    startDate: LocalDate,
+    endDate: LocalDate?,
+    recurrenceType: RecurrenceType,
+    categoryId: UUID,
+    notes: String?,
+) = CreateAccountInput(
+    ownershipType = AccountOwnershipType.PERSONAL,
+    responsibleMemberId = null,
+    title = title,
+    baseAmount = baseAmount,
+    startDate = startDate,
+    endDate = endDate,
+    recurrenceType = recurrenceType,
+    categoryId = categoryId,
+    notes = notes,
+    active = true,
+)
+
 class AccountLifecycleUseCasesTest {
 
     @Test
     fun `editing account updates only future pending occurrences`() {
         val repository = FakeAccountRepository()
         val clock = UtcClock(Clock.fixed(Instant.parse("2026-01-15T00:00:00Z"), ZoneOffset.UTC))
-        val createUseCase = CreateAccountUseCase(repository, RecurrenceGenerationService(), clock)
-        val updateUseCase = UpdateAccountUseCase(repository, RecurrenceGenerationService(), clock)
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+        val updateUseCase = UpdateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
 
         val created = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "Gym",
                 baseAmount = BigDecimal("100.00"),
                 startDate = LocalDate.parse("2026-01-10"),
@@ -40,6 +161,7 @@ class AccountLifecycleUseCasesTest {
         repository.markOccurrencePaid(created.id, LocalDate.parse("2026-01-16"))
 
         updateUseCase.execute(
+            accountLifecycleTestUserId,
             created.id,
             UpsertAccountInput(
                 title = "Gym Premium",
@@ -66,11 +188,27 @@ class AccountLifecycleUseCasesTest {
     fun `paid and past occurrences are preserved on edit`() {
         val repository = FakeAccountRepository()
         val clock = UtcClock(Clock.fixed(Instant.parse("2026-03-10T00:00:00Z"), ZoneOffset.UTC))
-        val createUseCase = CreateAccountUseCase(repository, RecurrenceGenerationService(), clock)
-        val updateUseCase = UpdateAccountUseCase(repository, RecurrenceGenerationService(), clock)
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+        val updateUseCase = UpdateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
 
         val created = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "Rent",
                 baseAmount = BigDecimal("800.00"),
                 startDate = LocalDate.parse("2026-03-01"),
@@ -84,6 +222,7 @@ class AccountLifecycleUseCasesTest {
         repository.markOccurrencePaid(created.id, LocalDate.parse("2026-03-12"))
 
         updateUseCase.execute(
+            accountLifecycleTestUserId,
             created.id,
             UpsertAccountInput(
                 title = "Rent Updated",
@@ -107,11 +246,20 @@ class AccountLifecycleUseCasesTest {
     fun `deactivation removes future pending occurrences`() {
         val repository = FakeAccountRepository()
         val clock = UtcClock(Clock.fixed(Instant.parse("2026-02-10T00:00:00Z"), ZoneOffset.UTC))
-        val createUseCase = CreateAccountUseCase(repository, RecurrenceGenerationService(), clock)
-        val deactivateUseCase = DeactivateAccountUseCase(repository, clock)
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+        val deactivateUseCase = DeactivateAccountUseCase(repository, lifecycleAccountAccess, clock)
 
         val account = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "Streaming",
                 baseAmount = BigDecimal("30.00"),
                 startDate = LocalDate.parse("2026-02-01"),
@@ -122,7 +270,7 @@ class AccountLifecycleUseCasesTest {
             ),
         )
 
-        deactivateUseCase.execute(account.id)
+        deactivateUseCase.execute(accountLifecycleTestUserId, account.id)
 
         assertFalse(repository.findById(account.id)!!.active)
         assertTrue(
@@ -135,12 +283,26 @@ class AccountLifecycleUseCasesTest {
     fun `activation regenerates occurrences`() {
         val repository = FakeAccountRepository()
         val clock = UtcClock(Clock.fixed(Instant.parse("2026-02-10T00:00:00Z"), ZoneOffset.UTC))
-        val createUseCase = CreateAccountUseCase(repository, RecurrenceGenerationService(), clock)
-        val deactivateUseCase = DeactivateAccountUseCase(repository, clock)
-        val activateUseCase = ActivateAccountUseCase(repository, RecurrenceGenerationService(), clock)
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+        val deactivateUseCase = DeactivateAccountUseCase(repository, lifecycleAccountAccess, clock)
+        val activateUseCase = ActivateAccountUseCase(
+            repository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
 
         val account = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "Phone",
                 baseAmount = BigDecimal("50.00"),
                 startDate = LocalDate.parse("2026-02-01"),
@@ -150,8 +312,8 @@ class AccountLifecycleUseCasesTest {
                 notes = null,
             ),
         )
-        deactivateUseCase.execute(account.id)
-        activateUseCase.execute(account.id)
+        deactivateUseCase.execute(accountLifecycleTestUserId, account.id)
+        activateUseCase.execute(accountLifecycleTestUserId, account.id)
 
         val openFuture = repository.findOccurrencesByAccountId(account.id)
             .filter { it.status == OccurrenceStatus.PENDING && it.dueDate >= LocalDate.parse("2026-02-10") }
@@ -162,11 +324,20 @@ class AccountLifecycleUseCasesTest {
     fun `deletion only works when allowed`() {
         val repository = FakeAccountRepository()
         val clock = UtcClock(Clock.fixed(Instant.parse("2026-02-10T00:00:00Z"), ZoneOffset.UTC))
-        val createUseCase = CreateAccountUseCase(repository, RecurrenceGenerationService(), clock)
-        val deleteUseCase = DeleteAccountUseCase(repository, clock)
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+        val deleteUseCase = DeleteAccountUseCase(repository, lifecycleAccountAccess, clock)
 
         val deletable = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "One time",
                 baseAmount = BigDecimal("0.00"),
                 startDate = LocalDate.parse("2026-03-01"),
@@ -176,11 +347,12 @@ class AccountLifecycleUseCasesTest {
                 notes = null,
             ),
         )
-        deleteUseCase.execute(deletable.id)
+        deleteUseCase.execute(accountLifecycleTestUserId, deletable.id)
         assertEquals(null, repository.findById(deletable.id))
 
         val withHistory = createUseCase.execute(
-            UpsertAccountInput(
+            accountLifecycleTestUserId,
+            createInput(
                 title = "Water",
                 baseAmount = BigDecimal("10.00"),
                 startDate = LocalDate.parse("2026-01-01"),
@@ -191,7 +363,7 @@ class AccountLifecycleUseCasesTest {
             ),
         )
         repository.markOccurrencePaid(withHistory.id, LocalDate.parse("2026-02-10"))
-        deleteUseCase.execute(withHistory.id)
+        deleteUseCase.execute(accountLifecycleTestUserId, withHistory.id)
         assertFalse(repository.findById(withHistory.id)!!.active)
     }
 }
@@ -201,14 +373,21 @@ private class FakeAccountRepository : AccountRepository {
     private val occurrences = mutableListOf<AccountOccurrence>()
     val defaultCategoryId: UUID = UUID.randomUUID()
 
-    override fun findAll(): List<Account> = accounts.values.toList()
+    private fun isVisible(account: Account, q: AccountViewerQuery): Boolean = when (account.ownershipType) {
+        AccountOwnershipType.PERSONAL -> account.ownerUserId == q.userId
+        AccountOwnershipType.FAMILY -> q.canViewFamilyAccounts && account.familyId == q.viewerFamilyId
+    }
+
+    override fun findVisibleForUser(query: AccountViewerQuery): List<Account> =
+        accounts.values.filter { isVisible(it, query) }
+
+    override fun findVisibleAccountIds(query: AccountViewerQuery): Set<UUID> =
+        findVisibleForUser(query).map { it.id }.toSet()
 
     override fun findActiveRecurringAccounts(): List<Account> =
         accounts.values.filter { it.active && it.recurrenceType != RecurrenceType.UNIQUE }
 
     override fun findById(id: UUID): Account? = accounts[id]
-
-    override fun categoryExists(categoryId: UUID): Boolean = categoryId == defaultCategoryId
 
     override fun create(command: SaveAccountCommand): Account {
         val now = Instant.parse("2026-01-01T00:00:00Z")
@@ -222,6 +401,11 @@ private class FakeAccountRepository : AccountRepository {
             categoryId = command.categoryId,
             notes = command.notes,
             active = command.active,
+            ownershipType = command.ownershipType,
+            ownerUserId = command.ownerUserId,
+            familyId = command.familyId,
+            createdByUserId = command.createdByUserId,
+            responsibleMemberId = command.responsibleMemberId,
             createdAt = now,
             updatedAt = now,
         )
@@ -240,6 +424,11 @@ private class FakeAccountRepository : AccountRepository {
             categoryId = command.categoryId,
             notes = command.notes,
             active = command.active,
+            ownershipType = command.ownershipType,
+            ownerUserId = command.ownerUserId,
+            familyId = command.familyId,
+            createdByUserId = command.createdByUserId,
+            responsibleMemberId = command.responsibleMemberId,
             updatedAt = Instant.now(),
         )
         accounts[id] = updated
@@ -305,4 +494,34 @@ private class FakeAccountRepository : AccountRepository {
             )
         }
     }
+}
+
+private class AccountLifecycleStubCategoryRepository(
+    private val visibleCategoryId: UUID,
+) : CategoryRepository {
+    override fun listForUser(userId: UUID, familyId: UUID?): List<Category> = emptyList()
+
+    override fun findByIdForUser(userId: UUID, familyId: UUID?, id: UUID): Category? = null
+
+    override fun existsByNameForUser(userId: UUID, familyId: UUID?, name: String): Boolean = false
+
+    override fun existsByNameExcludingIdForUser(
+        userId: UUID,
+        familyId: UUID?,
+        name: String,
+        excludedId: UUID,
+    ): Boolean = false
+
+    override fun isVisibleToUser(categoryId: UUID, userId: UUID, familyId: UUID?): Boolean =
+        categoryId == visibleCategoryId
+
+    override fun createForUser(userId: UUID, familyId: UUID?, name: String, color: String?): Category =
+        throw UnsupportedOperationException()
+
+    override fun updateForUser(userId: UUID, familyId: UUID?, id: UUID, name: String, color: String?): Category =
+        throw UnsupportedOperationException()
+
+    override fun deleteByIdForUser(userId: UUID, familyId: UUID?, id: UUID) {}
+
+    override fun isCategoryInUse(id: UUID): Boolean = false
 }

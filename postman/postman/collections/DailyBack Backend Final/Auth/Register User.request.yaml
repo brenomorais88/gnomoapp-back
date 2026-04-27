@@ -1,0 +1,19 @@
+$kind: http-request
+description: Public endpoint. Creates user and returns auth token/session.
+url: "{{baseUrl}}/auth/register"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "firstName": "Breno",
+      "lastName": "Morais",
+      "document": "12345678901",
+      "birthDate": "1990-01-10",
+      "password": "StrongPass#123",
+      "email": "breno@example.com",
+      "phone": "+5511999999999"
+    }
+order: 1000

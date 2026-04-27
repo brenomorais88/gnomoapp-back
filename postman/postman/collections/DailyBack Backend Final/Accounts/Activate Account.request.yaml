@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{baseUrl}}/accounts/{{accountId}}/activate"
+method: PATCH
+headers:
+  Authorization: Bearer {{token}}
+order: 6000

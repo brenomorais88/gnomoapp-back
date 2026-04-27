@@ -12,6 +12,7 @@ import com.dailyback.features.accountoccurrences.application.OverrideOccurrenceA
 import com.dailyback.features.accountoccurrences.application.UnmarkOccurrencePaidUseCase
 import com.dailyback.features.accounts.api.accountRoutes
 import com.dailyback.features.accounts.application.ActivateAccountUseCase
+import com.dailyback.features.accounts.application.AccountAccessContextResolver
 import com.dailyback.features.accounts.application.CreateAccountUseCase
 import com.dailyback.features.accounts.application.DeactivateAccountUseCase
 import com.dailyback.features.accounts.application.DeleteAccountUseCase
@@ -27,6 +28,15 @@ import com.dailyback.features.categories.application.ListCategoriesUseCase
 import com.dailyback.features.categories.application.UpdateCategoryUseCase
 import com.dailyback.features.dashboard.api.dashboardRoutes
 import com.dailyback.features.dashboard.application.GetDashboardCategorySummaryUseCase
+import com.dailyback.features.families.api.familyRoutes
+import com.dailyback.features.families.application.FamilyMemberPermissionService
+import com.dailyback.features.families.application.FamilyMemberRepository
+import com.dailyback.features.families.application.FamilyPermissionAuthorizer
+import com.dailyback.features.families.application.FamilyService
+import com.dailyback.features.families.domain.FamilyPermissionDeniedException
+import com.dailyback.features.users.api.authRoutes
+import com.dailyback.features.users.application.JwtTokenService
+import com.dailyback.features.users.application.UserAuthService
 import com.dailyback.features.dashboard.application.GetDashboardDayDetailsUseCase
 import com.dailyback.features.dashboard.application.GetDashboardHomeSummaryUseCase
 import com.dailyback.features.dashboard.application.GetDashboardNext12MonthsProjectionUseCase
@@ -34,11 +44,16 @@ import com.dailyback.shared.api.routes.healthRoutes
 import com.dailyback.shared.application.maintenance.RecurrenceMaintenanceService
 import com.dailyback.shared.application.health.GetHealthStatusUseCase
 import com.dailyback.shared.domain.health.DatabaseHealthChecker
-import com.dailyback.shared.errors.ApiException
 import com.dailyback.shared.errors.ApiErrorResponse
+import com.dailyback.shared.errors.ApiException
+import com.dailyback.shared.errors.ErrorCodes
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.jwt.jwt
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
@@ -47,6 +62,7 @@ import io.ktor.server.plugins.swagger.swaggerUI
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import org.koin.core.context.GlobalContext
 import org.koin.ktor.ext.inject
 import org.koin.ktor.plugin.Koin
 import java.time.Instant
@@ -58,6 +74,9 @@ fun Application.module(
     appConfig: AppConfig = AppConfig.fromEnvironment(),
     databaseHealthCheckerOverride: DatabaseHealthChecker? = null,
     categoryRepositoryOverride: CategoryRepository? = null,
+    userAuthServiceOverride: UserAuthService? = null,
+    familyPermissionAuthorizerOverride: FamilyPermissionAuthorizer? = null,
+    familyMemberRepositoryOverride: FamilyMemberRepository? = null,
     runStartup: Boolean = true,
 ) {
     install(CallLogging)
@@ -85,7 +104,30 @@ fun Application.module(
         json()
     }
     install(Koin) {
-        modules(coreModule(appConfig, databaseHealthCheckerOverride, categoryRepositoryOverride))
+        modules(
+            coreModule(
+                appConfig,
+                databaseHealthCheckerOverride,
+                categoryRepositoryOverride,
+                userAuthServiceOverride,
+                familyPermissionAuthorizerOverride,
+                familyMemberRepositoryOverride,
+            ),
+        )
+    }
+    install(Authentication) {
+        val jwtTokenService: JwtTokenService = GlobalContext.get().get(JwtTokenService::class)
+        jwt("auth-jwt") {
+            realm = "daily-back"
+            verifier(jwtTokenService.verifier)
+            validate { credential ->
+                val subject = credential.payload.subject ?: return@validate null
+                if (runCatching { UUID.fromString(subject) }.isFailure) {
+                    return@validate null
+                }
+                JWTPrincipal(credential.payload)
+            }
+        }
     }
     install(StatusPages) {
         exception<ApiException> { call, cause ->
@@ -102,13 +144,27 @@ fun Application.module(
             )
         }
 
+        exception<FamilyPermissionDeniedException> { call, cause ->
+            call.respond(
+                status = io.ktor.http.HttpStatusCode.Forbidden,
+                message = ApiErrorResponse(
+                    timestamp = Instant.now().toString(),
+                    path = call.request.local.uri,
+                    errorCode = ErrorCodes.FAMILY_PERMISSION_DENIED,
+                    message = cause.message ?: "Permission denied",
+                    details = mapOf("permission" to cause.permission.name),
+                    traceId = UUID.randomUUID().toString(),
+                ),
+            )
+        }
+
         exception<Throwable> { call, cause ->
             call.respond(
                 status = io.ktor.http.HttpStatusCode.InternalServerError,
                 message = ApiErrorResponse(
                     timestamp = Instant.now().toString(),
                     path = call.request.local.uri,
-                    errorCode = "INTERNAL_ERROR",
+                    errorCode = ErrorCodes.INTERNAL_ERROR,
                     message = "An unexpected error occurred",
                     details = mapOf("reason" to (cause.message ?: "unknown")),
                     traceId = UUID.randomUUID().toString(),
@@ -146,6 +202,11 @@ fun Application.module(
     val getDashboardCategorySummaryUseCase by inject<GetDashboardCategorySummaryUseCase>()
     val schedulerConfig by inject<SchedulerConfig>()
     val recurrenceMaintenanceService by inject<RecurrenceMaintenanceService>()
+    val userAuthService by inject<UserAuthService>()
+    val familyService by inject<FamilyService>()
+    val familyMemberPermissionService by inject<FamilyMemberPermissionService>()
+    val familyPermissionAuthorizer by inject<FamilyPermissionAuthorizer>()
+    val accountAccessContextResolver by inject<AccountAccessContextResolver>()
 
     if (runStartup && schedulerConfig.recurrenceMaintenanceEnabled) {
         val scheduler = Executors.newSingleThreadScheduledExecutor()
@@ -162,36 +223,50 @@ fun Application.module(
     }
 
     routing {
+        authRoutes(userAuthService)
+        authenticate("auth-jwt") {
+            familyRoutes(
+                familyService = familyService,
+                familyMemberPermissionService = familyMemberPermissionService,
+                familyPermissionAuthorizer = familyPermissionAuthorizer,
+            )
+            categoryRoutes(
+                familyPermissionAuthorizer = familyPermissionAuthorizer,
+                accountAccessContextResolver = accountAccessContextResolver,
+                listCategoriesUseCase = listCategoriesUseCase,
+                getCategoryByIdUseCase = getCategoryByIdUseCase,
+                createCategoryUseCase = createCategoryUseCase,
+                updateCategoryUseCase = updateCategoryUseCase,
+                deleteCategoryUseCase = deleteCategoryUseCase,
+            )
+            accountRoutes(
+                familyPermissionAuthorizer = familyPermissionAuthorizer,
+                listAccountsUseCase = listAccountsUseCase,
+                getAccountByIdUseCase = getAccountByIdUseCase,
+                createAccountUseCase = createAccountUseCase,
+                updateAccountUseCase = updateAccountUseCase,
+                deleteAccountUseCase = deleteAccountUseCase,
+                activateAccountUseCase = activateAccountUseCase,
+                deactivateAccountUseCase = deactivateAccountUseCase,
+            )
+            occurrenceRoutes(
+                familyPermissionAuthorizer = familyPermissionAuthorizer,
+                listOccurrencesUseCase = listOccurrencesUseCase,
+                getOccurrenceByIdUseCase = getOccurrenceByIdUseCase,
+                markOccurrencePaidUseCase = markOccurrencePaidUseCase,
+                unmarkOccurrencePaidUseCase = unmarkOccurrencePaidUseCase,
+                overrideOccurrenceAmountUseCase = overrideOccurrenceAmountUseCase,
+            )
+            dashboardRoutes(
+                familyPermissionAuthorizer = familyPermissionAuthorizer,
+                accountAccessContextResolver = accountAccessContextResolver,
+                getDashboardHomeSummaryUseCase = getDashboardHomeSummaryUseCase,
+                getDashboardDayDetailsUseCase = getDashboardDayDetailsUseCase,
+                getDashboardNext12MonthsProjectionUseCase = getDashboardNext12MonthsProjectionUseCase,
+                getDashboardCategorySummaryUseCase = getDashboardCategorySummaryUseCase,
+            )
+        }
         healthRoutes(getHealthStatusUseCase)
-        categoryRoutes(
-            listCategoriesUseCase = listCategoriesUseCase,
-            getCategoryByIdUseCase = getCategoryByIdUseCase,
-            createCategoryUseCase = createCategoryUseCase,
-            updateCategoryUseCase = updateCategoryUseCase,
-            deleteCategoryUseCase = deleteCategoryUseCase,
-        )
-        accountRoutes(
-            listAccountsUseCase = listAccountsUseCase,
-            getAccountByIdUseCase = getAccountByIdUseCase,
-            createAccountUseCase = createAccountUseCase,
-            updateAccountUseCase = updateAccountUseCase,
-            deleteAccountUseCase = deleteAccountUseCase,
-            activateAccountUseCase = activateAccountUseCase,
-            deactivateAccountUseCase = deactivateAccountUseCase,
-        )
-        occurrenceRoutes(
-            listOccurrencesUseCase = listOccurrencesUseCase,
-            getOccurrenceByIdUseCase = getOccurrenceByIdUseCase,
-            markOccurrencePaidUseCase = markOccurrencePaidUseCase,
-            unmarkOccurrencePaidUseCase = unmarkOccurrencePaidUseCase,
-            overrideOccurrenceAmountUseCase = overrideOccurrenceAmountUseCase,
-        )
-        dashboardRoutes(
-            getDashboardHomeSummaryUseCase = getDashboardHomeSummaryUseCase,
-            getDashboardDayDetailsUseCase = getDashboardDayDetailsUseCase,
-            getDashboardNext12MonthsProjectionUseCase = getDashboardNext12MonthsProjectionUseCase,
-            getDashboardCategorySummaryUseCase = getDashboardCategorySummaryUseCase,
-        )
         swaggerUI(path = "swagger", swaggerFile = "openapi/openapi.yaml")
         get("/") {
             call.respond(mapOf("service" to "daily-back", "status" to "running"))

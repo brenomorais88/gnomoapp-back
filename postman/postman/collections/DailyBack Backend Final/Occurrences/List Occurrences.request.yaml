@@ -1,0 +1,9 @@
+$kind: http-request
+url: "{{baseUrl}}/occurrences?scope=VISIBLE_TO_ME&month=2026-05"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  scope: VISIBLE_TO_ME
+  month: 2026-05
+order: 1000

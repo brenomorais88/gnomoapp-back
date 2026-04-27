@@ -1,0 +1,8 @@
+$kind: http-request
+url: "{{baseUrl}}/dashboard/home?month=2026-05"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  month: 2026-05
+order: 1000

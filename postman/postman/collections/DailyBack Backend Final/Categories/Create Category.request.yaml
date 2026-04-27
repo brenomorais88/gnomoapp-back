@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{baseUrl}}/categories"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "name": "Alimentação",
+      "color": "#22AA66"
+    }
+order: 3000

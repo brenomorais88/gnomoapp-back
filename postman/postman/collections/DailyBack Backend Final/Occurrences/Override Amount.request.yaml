@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{baseUrl}}/occurrences/{{occurrenceId}}/override-amount"
+method: PATCH
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "amount": "999.99"
+    }
+order: 5000

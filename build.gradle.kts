@@ -31,6 +31,12 @@ dependencies {
     implementation("io.ktor:ktor-server-content-negotiation-jvm:$ktorVersion")
     implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-swagger-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-auth-jvm:$ktorVersion")
+    implementation("io.ktor:ktor-server-auth-jwt-jvm:$ktorVersion")
+
+    implementation("com.auth0:java-jwt:4.5.0")
+    implementation("org.springframework.security:spring-security-crypto:6.4.4")
+    implementation("org.springframework:spring-jcl:6.2.6")
 
     implementation("io.insert-koin:koin-ktor:$koinVersion")
     implementation("io.insert-koin:koin-logger-slf4j:$koinVersion")
@@ -74,6 +80,10 @@ kover {
                 classes("com.dailyback.features.accounts.api.*")
                 classes("com.dailyback.features.accountoccurrences.infrastructure.*")
                 classes("com.dailyback.features.accountoccurrences.api.*")
+                classes("com.dailyback.features.users.infrastructure.*")
+                classes("com.dailyback.features.users.api.*")
+                classes("com.dailyback.features.families.infrastructure.*")
+                classes("com.dailyback.features.families.api.*")
             }
         }
         verify {

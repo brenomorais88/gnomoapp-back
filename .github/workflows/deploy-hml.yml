@@ -1,10 +1,9 @@
 name: Deploy HML
 
 on:
-  workflow_run:
-    workflows: ["Build Docker Image"]
-    types:
-      - completed
+  push:
+    branches:
+      - develop
   workflow_dispatch:
 
 concurrency:
@@ -12,13 +11,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.metadata.outputs.short_sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.metadata.outputs.image_name }}:develop
+            ${{ steps.metadata.outputs.image_name }}:sha-${{ steps.metadata.outputs.short_sha }}
+
   deploy:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'develop'
-      )
+    needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -26,26 +65,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Workflow source reminder (workflow_run)
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "::notice::Deploy HML triggered as: ${{ github.event_name }}"
-          echo "::notice::For 'workflow_run', GitHub loads workflow definitions from the repository DEFAULT branch (often 'main'), not necessarily from 'develop'."
-          echo "::notice::If this log does not show a 'Diagnose SSH secrets' step, your default branch is still running an older workflow file — merge the latest workflows into the default branch."
-
       - name: Diagnose SSH secrets (no key material printed)
         shell: bash
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.HML_HOST }}
+          SSH_USER: ${{ secrets.HML_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.HML_SSH_KEY }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           set -euo pipefail
 
           echo "::group::Which GitHub Secrets are used for SSH"
-          echo "This job reads: SSH_HOST, SSH_PORT, SSH_USER, SSH_PRIVATE_KEY"
+          echo "This job reads: HML_HOST, SSH_PORT, HML_USER, HML_SSH_KEY"
           echo "Private key bytes are never printed; only presence, shape checks, and a public fingerprint."
           echo "::endgroup::"
 
@@ -140,7 +171,7 @@ jobs:
         id: ssh_key_file
         shell: bash
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.HML_SSH_KEY }}
         run: |
           set -euo pipefail
           key_path="${RUNNER_TEMP}/github_actions_deploy_key"
@@ -153,8 +184,8 @@ jobs:
       - name: Verify HML and GHCR secrets exist (lengths only, values not printed)
         shell: bash
         env:
-          HML_DEPLOY_PATH: ${{ secrets.HML_DEPLOY_PATH }}
-          HML_HEALTHCHECK_URL: ${{ secrets.HML_HEALTHCHECK_URL }}
+          HML_HOST: ${{ secrets.HML_HOST }}
+          HML_USER: ${{ secrets.HML_USER }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         run: |
@@ -165,21 +196,21 @@ jobs:
             exit 1
           }
 
-          [[ -n "${HML_DEPLOY_PATH}" ]] || fail_empty "HML_DEPLOY_PATH"
-          [[ -n "${HML_HEALTHCHECK_URL}" ]] || fail_empty "HML_HEALTHCHECK_URL"
+          [[ -n "${HML_HOST}" ]] || fail_empty "HML_HOST"
+          [[ -n "${HML_USER}" ]] || fail_empty "HML_USER"
           [[ -n "${GHCR_USERNAME}" ]] || fail_empty "GHCR_USERNAME"
           [[ -n "${GHCR_TOKEN}" ]] || fail_empty "GHCR_TOKEN"
 
-          echo "OK: HML_DEPLOY_PATH length=${#HML_DEPLOY_PATH} characters"
-          echo "OK: HML_HEALTHCHECK_URL length=${#HML_HEALTHCHECK_URL} characters"
+          echo "OK: HML_HOST length=${#HML_HOST} characters"
+          echo "OK: HML_USER length=${#HML_USER} characters"
           echo "OK: GHCR_USERNAME length=${#GHCR_USERNAME} characters"
           echo "OK: GHCR_TOKEN length=${#GHCR_TOKEN} characters"
 
       - name: Deploy to DigitalOcean Droplet via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          host: ${{ secrets.HML_HOST }}
+          username: ${{ secrets.HML_USER }}
           key_path: ${{ steps.ssh_key_file.outputs.key_path }}
           port: ${{ secrets.SSH_PORT }}
           command_timeout: 30m
@@ -188,19 +219,14 @@ jobs:
           script: |
             set -euo pipefail
 
-            export DEPLOY_PATH="${{ secrets.HML_DEPLOY_PATH }}"
+            export DEPLOY_PATH="/srv/daily-back"
             export DEPLOY_BRANCH="develop"
-            export APP_HEALTHCHECK_URL="${{ secrets.HML_HEALTHCHECK_URL }}"
+            export APP_HEALTHCHECK_URL="http://127.0.0.1:8081/health"
             export APP_SERVICE_NAME="app"
             export APP_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
             export GHCR_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/daily-back"
             export GHCR_USERNAME="${{ secrets.GHCR_USERNAME }}"
             export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            if [ "${{ github.event_name }}" = "workflow_run" ]; then
-              export DOCKER_IMAGE_TAG="sha-${{ github.event.workflow_run.head_sha }}"
-              export DOCKER_IMAGE_TAG="${DOCKER_IMAGE_TAG:0:11}"
-            else
-              export DOCKER_IMAGE_TAG="develop"
-            fi
+            export DOCKER_IMAGE_TAG="sha-${{ needs.build-and-push.outputs.image_tag }}"
 
             bash "${DEPLOY_PATH}/scripts/deploy-hml.sh"

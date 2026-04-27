@@ -11,6 +11,7 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.greaterEq
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
@@ -29,7 +30,13 @@ class ExposedOccurrenceRepository(
     override fun findByFilters(filters: OccurrenceFilters): List<AccountOccurrence> {
         databaseFactory.connect()
         return transaction {
+            val accountIds = filters.accountIds
+            if (accountIds == null || accountIds.isEmpty()) {
+                return@transaction emptyList()
+            }
+
             val conditions = mutableListOf<Op<Boolean>>()
+            conditions += AccountOccurrencesTable.accountId inList accountIds.toList()
 
             filters.status?.let { conditions += AccountOccurrencesTable.status eq it.name }
             filters.categoryId?.let { conditions += AccountOccurrencesTable.categoryIdSnapshot eq it }

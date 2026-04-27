@@ -1,5 +1,7 @@
 package com.dailyback.features.dashboard.application
 
+import com.dailyback.features.accounts.application.AccountAccessContextResolver
+import com.dailyback.features.accounts.application.AccountRepository
 import com.dailyback.features.accountoccurrences.application.OccurrenceFilters
 import com.dailyback.features.accountoccurrences.application.OccurrenceRepository
 import com.dailyback.features.accountoccurrences.domain.OccurrenceStatus
@@ -42,9 +44,12 @@ data class DashboardMonthProjectionItem(
 
 class GetDashboardHomeSummaryUseCase(
     private val occurrenceRepository: OccurrenceRepository,
+    private val accountRepository: AccountRepository,
+    private val accountAccess: AccountAccessContextResolver,
     private val utcClock: UtcClock,
 ) {
-    fun execute(month: String?): DashboardHomeSummary {
+    fun execute(userId: UUID, month: String?): DashboardHomeSummary {
+        val accountIds = dashboardVisibleAccountIds(userId, accountRepository, accountAccess)
         val today = utcClock.today()
         val monthRange = parseMonthRange(month, today)
 
@@ -53,6 +58,7 @@ class GetDashboardHomeSummaryUseCase(
                 status = OccurrenceStatus.PENDING,
                 startDate = monthRange.first,
                 endDate = monthRange.second,
+                accountIds = accountIds,
             ),
         )
         val paid = occurrenceRepository.findByFilters(
@@ -60,23 +66,30 @@ class GetDashboardHomeSummaryUseCase(
                 status = OccurrenceStatus.PAID,
                 startDate = monthRange.first,
                 endDate = monthRange.second,
+                accountIds = accountIds,
             ),
         )
 
         val overdue = occurrenceRepository.findByFilters(
-            OccurrenceFilters(status = OccurrenceStatus.PENDING, endDate = today.minusDays(1)),
+            OccurrenceFilters(
+                status = OccurrenceStatus.PENDING,
+                endDate = today.minusDays(1),
+                accountIds = accountIds,
+            ),
         )
         val next7Days = occurrenceRepository.findByFilters(
             OccurrenceFilters(
                 status = OccurrenceStatus.PENDING,
                 startDate = today,
                 endDate = today.plusDays(7),
+                accountIds = accountIds,
             ),
         )
         val upcoming = occurrenceRepository.findByFilters(
             OccurrenceFilters(
                 status = OccurrenceStatus.PENDING,
                 startDate = today,
+                accountIds = accountIds,
             ),
         ).take(20)
 
@@ -100,22 +113,29 @@ class GetDashboardHomeSummaryUseCase(
 
 class GetDashboardDayDetailsUseCase(
     private val occurrenceRepository: OccurrenceRepository,
+    private val accountRepository: AccountRepository,
+    private val accountAccess: AccountAccessContextResolver,
 ) {
-    fun execute(date: LocalDate): List<DashboardOccurrenceItem> =
-        occurrenceRepository.findByFilters(
-            OccurrenceFilters(startDate = date, endDate = date),
+    fun execute(userId: UUID, date: LocalDate): List<DashboardOccurrenceItem> {
+        val accountIds = dashboardVisibleAccountIds(userId, accountRepository, accountAccess)
+        return occurrenceRepository.findByFilters(
+            OccurrenceFilters(startDate = date, endDate = date, accountIds = accountIds),
         ).map(::toItem)
+    }
 }
 
 class GetDashboardCategorySummaryUseCase(
     private val occurrenceRepository: OccurrenceRepository,
+    private val accountRepository: AccountRepository,
+    private val accountAccess: AccountAccessContextResolver,
     private val utcClock: UtcClock,
 ) {
-    fun execute(month: String?): List<DashboardCategorySummaryItem> {
+    fun execute(userId: UUID, month: String?): List<DashboardCategorySummaryItem> {
+        val accountIds = dashboardVisibleAccountIds(userId, accountRepository, accountAccess)
         val today = utcClock.today()
         val range = parseMonthRange(month, today)
         val monthOccurrences = occurrenceRepository.findByFilters(
-            OccurrenceFilters(startDate = range.first, endDate = range.second),
+            OccurrenceFilters(startDate = range.first, endDate = range.second, accountIds = accountIds),
         )
         return monthOccurrences.groupBy { it.categoryIdSnapshot }
             .map { (categoryId, items) ->
@@ -130,9 +150,12 @@ class GetDashboardCategorySummaryUseCase(
 
 class GetDashboardNext12MonthsProjectionUseCase(
     private val occurrenceRepository: OccurrenceRepository,
+    private val accountRepository: AccountRepository,
+    private val accountAccess: AccountAccessContextResolver,
     private val utcClock: UtcClock,
 ) {
-    fun execute(includeDetails: Boolean): List<DashboardMonthProjectionItem> {
+    fun execute(userId: UUID, includeDetails: Boolean): List<DashboardMonthProjectionItem> {
+        val accountIds = dashboardVisibleAccountIds(userId, accountRepository, accountAccess)
         val today = utcClock.today()
         val startMonth = YearMonth.from(today)
         val endMonth = startMonth.plusMonths(11)
@@ -140,6 +163,7 @@ class GetDashboardNext12MonthsProjectionUseCase(
             OccurrenceFilters(
                 startDate = startMonth.atDay(1),
                 endDate = endMonth.atEndOfMonth(),
+                accountIds = accountIds,
             ),
         ).map(::toItem)
 
@@ -153,6 +177,15 @@ class GetDashboardNext12MonthsProjectionUseCase(
             )
         }
     }
+}
+
+private fun dashboardVisibleAccountIds(
+    userId: UUID,
+    accountRepository: AccountRepository,
+    accountAccess: AccountAccessContextResolver,
+): Set<UUID> {
+    val q = accountAccess.buildViewerQuery(userId)
+    return accountRepository.findVisibleAccountIds(q)
 }
 
 private fun toItem(occurrence: com.dailyback.features.accounts.domain.AccountOccurrence): DashboardOccurrenceItem =
