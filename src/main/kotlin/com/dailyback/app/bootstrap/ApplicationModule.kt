@@ -96,9 +96,9 @@ fun Application.module(
         allowHost(host = "127.0.0.1:3000", schemes = listOf("http"))
         allowHost(host = "127.0.0.1:3001", schemes = listOf("http"))
 
-        // Production domains
-        allowHost(host = "brenomorais.com.br", schemes = listOf("https"))
-        allowHost(host = "www.brenomorais.com.br", schemes = listOf("https"))
+        // Public frontend domains
+        allowHost(host = "www.gnomoapp.com.br", schemes = listOf("https"))
+        allowHost(host = "hml.gnomoapp.com.br", schemes = listOf("https"))
     }
     install(ContentNegotiation) {
         json()
