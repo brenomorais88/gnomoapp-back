@@ -216,6 +216,12 @@ private class ScopedAccountRepositoryFixture(
     override fun findVisibleAccountIds(query: AccountViewerQuery): Set<UUID> = findVisibleForUser(query).map { it.id }.toSet()
     override fun create(command: SaveAccountCommand): Account = throw UnsupportedOperationException()
     override fun update(id: UUID, command: SaveAccountCommand): Account = throw UnsupportedOperationException()
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<OccurrenceSnapshot>,
+    ): Account = throw UnsupportedOperationException()
     override fun setActive(id: UUID, active: Boolean): Account = throw UnsupportedOperationException()
     override fun delete(id: UUID) = throw UnsupportedOperationException()
     override fun upsertOccurrences(occurrences: List<OccurrenceSnapshot>) = throw UnsupportedOperationException()

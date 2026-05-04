@@ -18,6 +18,13 @@ interface AccountRepository {
 
     fun update(id: UUID, command: SaveAccountCommand): Account
 
+    fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<OccurrenceSnapshot>,
+    ): Account
+
     fun setActive(id: UUID, active: Boolean): Account
 
     fun delete(id: UUID)

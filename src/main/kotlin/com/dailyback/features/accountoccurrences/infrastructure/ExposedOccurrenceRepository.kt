@@ -123,11 +123,15 @@ class ExposedOccurrenceRepository(
             .first()
 
     private fun monthRange(month: String?, startDate: LocalDate?, endDate: LocalDate?): Pair<LocalDate?, LocalDate?> {
-        if (!month.isNullOrBlank()) {
-            val ym = YearMonth.parse(month.trim())
-            return ym.atDay(1) to ym.atEndOfMonth()
+        if (month.isNullOrBlank()) {
+            return startDate to endDate
         }
-        return startDate to endDate
+        val ym = YearMonth.parse(month.trim())
+        val monthStart = ym.atDay(1)
+        val monthEnd = ym.atEndOfMonth()
+        val rangeStart = listOfNotNull(startDate, monthStart).maxOrNull()
+        val rangeEnd = listOfNotNull(endDate, monthEnd).minOrNull()
+        return rangeStart to rangeEnd
     }
 
     private fun toOccurrence(row: ResultRow): AccountOccurrence = AccountOccurrence(
