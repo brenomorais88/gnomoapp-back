@@ -170,6 +170,13 @@ class UpdateAccountUseCase(
     private val recurrenceGenerationService: RecurrenceGenerationService,
     private val utcClock: UtcClock,
 ) {
+    /**
+     * Recurrence refresh criteria:
+     * - old occurrence: dueDate < today OR already paid (status == PAID)
+     * - future occurrence: dueDate >= today AND pending (status == PENDING)
+     *
+     * Only future pending occurrences are replaced after a base account update.
+     */
     fun execute(userId: UUID, id: UUID, input: UpsertAccountInput): Account {
         validateAccountFields(input)
         val existing = accountRepository.findById(id) ?: throw AccountNotFoundException(id)
@@ -184,32 +191,41 @@ class UpdateAccountUseCase(
             throw AccountCategoryNotFoundException(input.categoryId)
         }
 
-        val updated = accountRepository.update(
-            id = id,
-            command = SaveAccountCommand(
-                title = input.title.trim(),
-                baseAmount = input.baseAmount,
-                startDate = input.startDate,
-                endDate = input.endDate,
-                recurrenceType = input.recurrenceType,
-                categoryId = input.categoryId,
-                notes = input.notes?.trim()?.ifBlank { null },
-                active = input.active,
-                ownershipType = existing.ownershipType,
-                ownerUserId = existing.ownerUserId,
-                familyId = existing.familyId,
-                createdByUserId = existing.createdByUserId ?: userId,
-                responsibleMemberId = existing.responsibleMemberId,
-            ),
+        val updateCommand = SaveAccountCommand(
+            title = input.title.trim(),
+            baseAmount = input.baseAmount,
+            startDate = input.startDate,
+            endDate = input.endDate,
+            recurrenceType = input.recurrenceType,
+            categoryId = input.categoryId,
+            notes = input.notes?.trim()?.ifBlank { null },
+            active = input.active,
+            ownershipType = existing.ownershipType,
+            ownerUserId = existing.ownerUserId,
+            familyId = existing.familyId,
+            createdByUserId = existing.createdByUserId ?: userId,
+            responsibleMemberId = existing.responsibleMemberId,
         )
 
         val today = utcClock.today()
-        accountRepository.deleteFuturePendingOccurrences(id, today)
+        val updatedProjection = existing.copy(
+            title = updateCommand.title,
+            baseAmount = updateCommand.baseAmount,
+            startDate = updateCommand.startDate,
+            endDate = updateCommand.endDate,
+            recurrenceType = updateCommand.recurrenceType,
+            categoryId = updateCommand.categoryId,
+            notes = updateCommand.notes,
+            active = updateCommand.active,
+        )
         val horizon = today.plusMonths(OCCURRENCE_WINDOW_MONTHS)
-        val snapshots = recurrenceGenerationService.generateSnapshots(updated, today, horizon)
-        accountRepository.upsertOccurrences(snapshots)
-
-        return updated
+        val snapshots = recurrenceGenerationService.generateSnapshots(updatedProjection, today, horizon)
+        return accountRepository.updateAndRefreshFuturePendingOccurrences(
+            id = id,
+            command = updateCommand,
+            fromDate = today,
+            futurePendingSnapshots = snapshots,
+        )
     }
 }
 

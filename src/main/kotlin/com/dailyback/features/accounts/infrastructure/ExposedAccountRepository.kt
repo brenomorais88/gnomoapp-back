@@ -167,6 +167,75 @@ class ExposedAccountRepository(
         }
     }
 
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<OccurrenceSnapshot>,
+    ): Account {
+        databaseFactory.connect()
+        return transaction {
+            AccountsTable.update({ AccountsTable.id eq id }) {
+                it[title] = command.title
+                it[baseAmount] = command.baseAmount
+                it[startDate] = command.startDate
+                it[endDate] = command.endDate
+                it[recurrenceType] = command.recurrenceType.name
+                it[categoryId] = command.categoryId
+                it[notes] = command.notes
+                it[active] = command.active
+                it[updatedAt] = Instant.now()
+            }
+
+            AccountOccurrencesTable.deleteWhere {
+                (AccountOccurrencesTable.accountId eq id) and
+                    (AccountOccurrencesTable.dueDate greaterEq fromDate) and
+                    (AccountOccurrencesTable.status eq OccurrenceStatus.PENDING.name)
+            }
+
+            futurePendingSnapshots.forEach { occurrence ->
+                val escapedTitle = occurrence.titleSnapshot.replace("'", "''")
+                val escapedNotes = occurrence.notesSnapshot?.replace("'", "''")
+                val notesSql = escapedNotes?.let { "'$it'" } ?: "NULL"
+                exec(
+                    """
+                    INSERT INTO account_occurrences (
+                        account_id,
+                        title_snapshot,
+                        amount_snapshot,
+                        due_date,
+                        status,
+                        paid_at,
+                        notes_snapshot,
+                        category_id_snapshot,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        '${occurrence.accountId}',
+                        '$escapedTitle',
+                        ${occurrence.amountSnapshot},
+                        '${occurrence.dueDate}',
+                        '${occurrence.status.name}',
+                        NULL,
+                        $notesSql,
+                        '${occurrence.categoryIdSnapshot}',
+                        NOW(),
+                        NOW()
+                    )
+                    ON CONFLICT (account_id, due_date) DO NOTHING
+                    """.trimIndent(),
+                )
+            }
+
+            AccountsTable.selectAll()
+                .where { AccountsTable.id eq id }
+                .limit(1)
+                .map(::toAccount)
+                .first()
+        }
+    }
+
     override fun setActive(id: UUID, active: Boolean): Account {
         databaseFactory.connect()
         return transaction {

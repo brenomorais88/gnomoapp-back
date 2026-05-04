@@ -18,6 +18,7 @@ import com.dailyback.shared.api.toUuidOrBadRequest
 import com.dailyback.shared.domain.family.FamilyPermissionKey
 import com.dailyback.shared.errors.ApiException
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -47,12 +48,15 @@ fun Route.occurrenceRoutes(
                 authorizer = familyPermissionAuthorizer,
                 permission = FamilyPermissionKey.CAN_VIEW_FAMILY_ACCOUNTS,
             )
+            val startDate = call.parseRequiredDateParam("startDate")
+            val endDate = call.parseRequiredDateParam("endDate")
+            validateDateRange(startDate, endDate)
             val filters = OccurrenceFilters(
                 status = call.request.queryParameters["status"]?.let(OccurrenceStatus::fromValue),
                 categoryId = call.request.queryParameters["categoryId"]?.let(UUID::fromString),
                 text = call.request.queryParameters["text"],
-                startDate = call.request.queryParameters["startDate"]?.let(LocalDate::parse),
-                endDate = call.request.queryParameters["endDate"]?.let(LocalDate::parse),
+                startDate = startDate,
+                endDate = endDate,
                 month = call.request.queryParameters["month"],
             )
             val list = runCatching { listOccurrencesUseCase.execute(userId, filters, scope) }
@@ -93,6 +97,35 @@ fun Route.occurrenceRoutes(
             }.getOrElse { throw mapOccurrenceException(it) }
             call.respond(occurrence.toResponse())
         }
+    }
+}
+
+private fun ApplicationCall.parseRequiredDateParam(name: String): LocalDate {
+    val value = request.queryParameters[name]?.trim()
+    if (value.isNullOrBlank()) {
+        throw ApiException(
+            statusCode = HttpStatusCode.BadRequest,
+            errorCode = "INVALID_OCCURRENCE_REQUEST",
+            message = "Query parameter '$name' is required",
+        )
+    }
+    return runCatching { LocalDate.parse(value) }
+        .getOrElse {
+            throw ApiException(
+                statusCode = HttpStatusCode.BadRequest,
+                errorCode = "INVALID_OCCURRENCE_REQUEST",
+                message = "Query parameter '$name' must be in yyyy-MM-dd format",
+            )
+        }
+}
+
+private fun validateDateRange(startDate: LocalDate, endDate: LocalDate) {
+    if (endDate < startDate) {
+        throw ApiException(
+            statusCode = HttpStatusCode.BadRequest,
+            errorCode = "INVALID_OCCURRENCE_REQUEST",
+            message = "Query parameter 'endDate' must be on or after 'startDate'",
+        )
     }
 }
 

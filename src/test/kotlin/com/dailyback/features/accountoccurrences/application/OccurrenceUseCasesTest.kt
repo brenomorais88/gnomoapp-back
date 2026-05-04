@@ -96,6 +96,13 @@ private class SinglePersonalAccountRepository(
 
     override fun update(id: UUID, command: SaveAccountCommand): Account = throw UnsupportedOperationException()
 
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<com.dailyback.features.accounts.application.OccurrenceSnapshot>,
+    ): Account = throw UnsupportedOperationException()
+
     override fun setActive(id: UUID, active: Boolean): Account = throw UnsupportedOperationException()
 
     override fun delete(id: UUID) = throw UnsupportedOperationException()
@@ -275,8 +282,10 @@ class OccurrenceUseCasesTest {
 
         val first = ctx.occurrenceRepo.findById(ctx.occurrenceRepo.occurrenceA.id)!!
         val second = ctx.occurrenceRepo.findById(ctx.occurrenceRepo.occurrenceB.id)!!
+        val baseAccount = ctx.accountRepo.findById(first.accountId)!!
         assertEquals(BigDecimal("555.55"), first.amountSnapshot)
         assertEquals(BigDecimal("20.00"), second.amountSnapshot)
+        assertEquals(BigDecimal.ZERO, baseAccount.baseAmount)
     }
 
     @Test

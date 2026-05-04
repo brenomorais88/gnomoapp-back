@@ -413,7 +413,7 @@ Estrutura exposta no frontend (`AuthUserResponse`):
 - `PATCH /occurrences/{id}/override-amount`
 
 ### Filtros disponiveis
-- `scope`: `PERSONAL | FAMILY | VISIBLE_TO_ME`
+git
 - `status`: `PENDING | PAID`
 - `categoryId`
 - `text`
@@ -445,7 +445,11 @@ Estrutura exposta no frontend (`AuthUserResponse`):
 
 ### Combinacao de filtros (occurrences)
 Exemplo:
-`/occurrences?scope=VISIBLE_TO_ME&month=2026-05&status=PENDING&categoryId=<uuid>`
+`/occurrences?scope=VISIBLE_TO_ME&startDate=2026-05-01&endDate=2026-05-31&month=2026-05&status=PENDING&categoryId=<uuid>`
+
+Observacoes:
+- `startDate` e `endDate` sao obrigatorios
+- intervalo invalido (`endDate < startDate`) retorna `400`
 
 ### Recomendacao de UI para tabs
 - Tab 1: Pessoal (`PERSONAL`)
@@ -631,7 +635,7 @@ export interface DashboardOccurrenceResponse {
 1. `GET /categories`
 2. `POST /accounts` (PERSONAL ou FAMILY)
 3. `GET /accounts?scope=VISIBLE_TO_ME`
-4. `GET /occurrences?scope=VISIBLE_TO_ME&month=yyyy-MM`
+4. `GET /occurrences?scope=VISIBLE_TO_ME&startDate=yyyy-MM-01&endDate=yyyy-MM-31&month=yyyy-MM`
 
 ### Fluxo 4: governanca de UI por permissao
 1. `GET /families/current/members/{memberId}/permissions`

@@ -126,6 +126,13 @@ private class ScopedAccountRepository(
 
     override fun update(id: UUID, command: SaveAccountCommand): Account = throw UnsupportedOperationException()
 
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<com.dailyback.features.accounts.application.OccurrenceSnapshot>,
+    ): Account = throw UnsupportedOperationException()
+
     override fun setActive(id: UUID, active: Boolean): Account = throw UnsupportedOperationException()
 
     override fun delete(id: UUID) = throw UnsupportedOperationException()
