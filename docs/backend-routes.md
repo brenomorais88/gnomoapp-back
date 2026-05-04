@@ -322,10 +322,15 @@ Documentacao gerada a partir das rotas implementadas no codigo (`ApplicationModu
   - `status`: `PENDING | PAID`
   - `categoryId`: UUID
   - `text`: busca em titulo/notas
-  - `startDate`, `endDate`: `yyyy-MM-dd`
-  - `month`: `yyyy-MM`
+  - `startDate`: `yyyy-MM-dd` (**obrigatorio**)
+  - `endDate`: `yyyy-MM-dd` (**obrigatorio**)
+  - `month`: `yyyy-MM` (opcional, aplicado em conjunto com o intervalo informado)
 - **Sucesso** `200`: lista de `OccurrenceResponse`
 - **Erros principais**: `INVALID_OCCURRENCE_REQUEST`, `FAMILY_PERMISSION_DENIED` (quando `scope=FAMILY` sem permissao)
+- **Validacoes**:
+  - retorna `400` quando `startDate`/`endDate` nao sao enviados
+  - retorna `400` quando formato de data eh invalido
+  - retorna `400` quando `endDate < startDate`
 
 ### GET `/occurrences/{id}`
 - **Auth**: sim
@@ -356,6 +361,14 @@ Documentacao gerada a partir das rotas implementadas no codigo (`ApplicationModu
 - **Sucesso** `200`: `OccurrenceResponse`
 - **Erros principais**: `INVALID_OCCURRENCE_AMOUNT`, `OCCURRENCE_NOT_FOUND`, `ACCOUNT_ACCESS_DENIED`
 - **Observacoes**: em conta FAMILY depende de permissao de edicao da conta.
+
+### Regras de recorrencia (atualizacao de conta base)
+- Criacao de conta recorrente gera ocorrencias com o mesmo `baseAmount` inicial.
+- `override-amount` altera apenas a ocorrencia alvo (nao altera a conta base e nao propaga para outras ocorrencias).
+- Ao editar a conta base recorrente:
+  - **ocorrencia antiga** = `dueDate < hoje` **ou** `status=PAID`
+  - **ocorrencia futura** = `dueDate >= hoje` **e** `status=PENDING`
+  - somente ocorrencias futuras pendentes sao atualizadas.
 
 ## Dashboard
 

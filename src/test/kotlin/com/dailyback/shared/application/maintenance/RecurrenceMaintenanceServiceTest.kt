@@ -78,6 +78,12 @@ private class FakeMaintenanceAccountRepository : AccountRepository {
     override fun findById(id: UUID): Account? = if (id == recurring.id) recurring else null
     override fun create(command: SaveAccountCommand): Account = recurring
     override fun update(id: UUID, command: SaveAccountCommand): Account = recurring
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<OccurrenceSnapshot>,
+    ): Account = recurring
     override fun setActive(id: UUID, active: Boolean): Account = recurring.copy(active = active)
     override fun delete(id: UUID) {}
 

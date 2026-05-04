@@ -122,6 +122,75 @@ private fun createInput(
 )
 
 class AccountLifecycleUseCasesTest {
+    @Test
+    fun `creating recurring account generates occurrences with same base amount`() {
+        val repository = FakeAccountRepository()
+        val clock = UtcClock(Clock.fixed(Instant.parse("2026-01-15T00:00:00Z"), ZoneOffset.UTC))
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+
+        val created = createUseCase.execute(
+            accountLifecycleTestUserId,
+            createInput(
+                title = "School",
+                baseAmount = BigDecimal("199.90"),
+                startDate = LocalDate.parse("2026-01-15"),
+                endDate = LocalDate.parse("2026-01-20"),
+                recurrenceType = RecurrenceType.DAILY,
+                categoryId = repository.defaultCategoryId,
+                notes = null,
+            ),
+        )
+
+        val generated = repository.findOccurrencesByAccountId(created.id)
+        assertTrue(generated.isNotEmpty())
+        assertTrue(generated.all { it.amountSnapshot == BigDecimal("199.90") })
+    }
+
+    @Test
+    fun `creating monthly account includes installments from start date before today`() {
+        val repository = FakeAccountRepository()
+        val clock = UtcClock(Clock.fixed(Instant.parse("2026-05-04T00:00:00Z"), ZoneOffset.UTC))
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+
+        val created = createUseCase.execute(
+            accountLifecycleTestUserId,
+            createInput(
+                title = "Subscription",
+                baseAmount = BigDecimal("50.00"),
+                startDate = LocalDate.parse("2026-03-10"),
+                endDate = null,
+                recurrenceType = RecurrenceType.MONTHLY,
+                categoryId = repository.defaultCategoryId,
+                notes = null,
+            ),
+        )
+
+        val dueDates = repository.findOccurrencesByAccountId(created.id).map { it.dueDate }.sorted()
+        assertEquals(
+            listOf(
+                LocalDate.parse("2026-03-10"),
+                LocalDate.parse("2026-04-10"),
+                LocalDate.parse("2026-05-10"),
+            ),
+            dueDates.take(3),
+        )
+    }
 
     @Test
     fun `editing account updates only future pending occurrences`() {
@@ -179,9 +248,11 @@ class AccountLifecycleUseCasesTest {
         val paid = all.first { it.dueDate == LocalDate.parse("2026-01-16") }
         assertEquals(OccurrenceStatus.PAID, paid.status)
         assertEquals("Gym", paid.titleSnapshot)
+        assertEquals(BigDecimal("100.00"), paid.amountSnapshot)
 
         val futureOpen = all.filter { it.dueDate >= LocalDate.parse("2026-01-15") && it.status == OccurrenceStatus.PENDING }
         assertTrue(futureOpen.all { it.titleSnapshot == "Gym Premium" })
+        assertTrue(futureOpen.all { it.amountSnapshot == BigDecimal("120.00") })
     }
 
     @Test
@@ -239,7 +310,19 @@ class AccountLifecycleUseCasesTest {
         val occurrences = repository.findOccurrencesByAccountId(created.id)
         val past = occurrences.filter { it.dueDate < LocalDate.parse("2026-03-10") }
         assertTrue(past.all { it.titleSnapshot == "Rent" })
+        assertTrue(past.all { it.amountSnapshot == BigDecimal("800.00") })
         assertTrue(occurrences.any { it.dueDate == LocalDate.parse("2026-03-12") && it.status == OccurrenceStatus.PAID })
+        assertTrue(
+            occurrences.any {
+                it.dueDate == LocalDate.parse("2026-03-12") &&
+                    it.status == OccurrenceStatus.PAID &&
+                    it.amountSnapshot == BigDecimal("800.00")
+            },
+        )
+        val futurePending = occurrences.filter {
+            it.dueDate >= LocalDate.parse("2026-03-10") && it.status == OccurrenceStatus.PENDING
+        }
+        assertTrue(futurePending.all { it.amountSnapshot == BigDecimal("850.00") })
     }
 
     @Test
@@ -432,6 +515,18 @@ private class FakeAccountRepository : AccountRepository {
             updatedAt = Instant.now(),
         )
         accounts[id] = updated
+        return updated
+    }
+
+    override fun updateAndRefreshFuturePendingOccurrences(
+        id: UUID,
+        command: SaveAccountCommand,
+        fromDate: LocalDate,
+        futurePendingSnapshots: List<OccurrenceSnapshot>,
+    ): Account {
+        val updated = update(id, command)
+        deleteFuturePendingOccurrences(id, fromDate)
+        upsertOccurrences(futurePendingSnapshots)
         return updated
     }
 
