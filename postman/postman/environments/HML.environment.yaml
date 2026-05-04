@@ -1,0 +1,20 @@
+name: HML
+values:
+  - key: baseUrl
+    value: 'http://localhost:8080'
+    enabled: true
+  - key: categoryId
+    value: ''
+    enabled: true
+  - key: accountId
+    value: ''
+    enabled: true
+  - key: occurrenceId
+    value: ''
+    enabled: true
+  - key: month
+    value: 2026-04
+    enabled: true
+  - key: date
+    value: '2026-04-14'
+    enabled: true
