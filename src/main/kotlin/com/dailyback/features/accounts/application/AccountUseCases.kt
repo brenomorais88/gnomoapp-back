@@ -154,10 +154,16 @@ class CreateAccountUseCase(
         val responsibleMemberId: UUID?,
     )
 
+    /**
+     * Materializes pending occurrences from [Account.startDate] through the rolling horizon.
+     * Using "today" as the lower bound would skip past-due installments (e.g. monthly bills
+     * between start and the current date).
+     */
     private fun regenerateFutureOccurrences(account: Account) {
         val today = utcClock.today()
         val horizon = today.plusMonths(OCCURRENCE_WINDOW_MONTHS)
-        val snapshots = recurrenceGenerationService.generateSnapshots(account, today, horizon)
+        val windowStart = account.startDate
+        val snapshots = recurrenceGenerationService.generateSnapshots(account, windowStart, horizon)
         accountRepository.upsertOccurrences(snapshots)
     }
 }
@@ -244,7 +250,8 @@ class ActivateAccountUseCase(
         val activated = accountRepository.setActive(id, true)
         val today = utcClock.today()
         val horizon = today.plusMonths(OCCURRENCE_WINDOW_MONTHS)
-        val snapshots = recurrenceGenerationService.generateSnapshots(activated, today, horizon)
+        val windowStart = activated.startDate
+        val snapshots = recurrenceGenerationService.generateSnapshots(activated, windowStart, horizon)
         accountRepository.upsertOccurrences(snapshots)
         return activated
     }

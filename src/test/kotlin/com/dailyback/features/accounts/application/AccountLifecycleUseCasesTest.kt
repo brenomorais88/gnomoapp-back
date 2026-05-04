@@ -154,6 +154,43 @@ class AccountLifecycleUseCasesTest {
         assertTrue(generated.all { it.amountSnapshot == BigDecimal("199.90") })
     }
 
+    @Test
+    fun `creating monthly account includes installments from start date before today`() {
+        val repository = FakeAccountRepository()
+        val clock = UtcClock(Clock.fixed(Instant.parse("2026-05-04T00:00:00Z"), ZoneOffset.UTC))
+        val categoryRepo = AccountLifecycleStubCategoryRepository(repository.defaultCategoryId)
+        val createUseCase = CreateAccountUseCase(
+            repository,
+            categoryRepo,
+            AccountLifecycleFamilyMemberRepository,
+            lifecycleAccountAccess,
+            RecurrenceGenerationService(),
+            clock,
+        )
+
+        val created = createUseCase.execute(
+            accountLifecycleTestUserId,
+            createInput(
+                title = "Subscription",
+                baseAmount = BigDecimal("50.00"),
+                startDate = LocalDate.parse("2026-03-10"),
+                endDate = null,
+                recurrenceType = RecurrenceType.MONTHLY,
+                categoryId = repository.defaultCategoryId,
+                notes = null,
+            ),
+        )
+
+        val dueDates = repository.findOccurrencesByAccountId(created.id).map { it.dueDate }.sorted()
+        assertEquals(
+            listOf(
+                LocalDate.parse("2026-03-10"),
+                LocalDate.parse("2026-04-10"),
+                LocalDate.parse("2026-05-10"),
+            ),
+            dueDates.take(3),
+        )
+    }
 
     @Test
     fun `editing account updates only future pending occurrences`() {
